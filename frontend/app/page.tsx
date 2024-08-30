@@ -1,3 +1,4 @@
+import AgentTest from "@/components/AgentTest";
 import ConnectButton from "../components/ConnectButton";
 
 export default function Home() {
@@ -15,6 +16,7 @@ export default function Home() {
             <ConnectButton />
           </div>
         </header>
+        <AgentTest />
       </div>
     </main>
   );

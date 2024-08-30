@@ -3,7 +3,7 @@ import type { Metadata } from 'next'
 import { headers } from 'next/headers'
 import { cookieToInitialState } from 'wagmi'
 import { config } from '../config/walletConfig'
-import WalletProvider from '../context/WalletProvider'
+import { Web3ModalProvider } from '@/lib/Web3Modal'
 
 export const metadata: Metadata = {
   title: 'Onboard Agent',
@@ -20,7 +20,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <WalletProvider initialState={initialState}>{children}</WalletProvider>
+        <Web3ModalProvider>{children}</Web3ModalProvider>
       </body>
     </html>
   )
