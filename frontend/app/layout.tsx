@@ -4,6 +4,7 @@ import { headers } from 'next/headers'
 import { cookieToInitialState } from 'wagmi'
 import { config } from '../config/walletConfig'
 import { Web3ModalProvider } from '@/lib/Web3Modal'
+import { ThemeProvider } from '@/components/ThemeProvider'
 
 export const metadata: Metadata = {
   title: 'Onboard Agent',
@@ -20,7 +21,14 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <Web3ModalProvider>{children}</Web3ModalProvider>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <Web3ModalProvider>{children}</Web3ModalProvider>
+        </ThemeProvider>
       </body>
     </html>
   )

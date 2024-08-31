@@ -1,16 +1,21 @@
 'use client'
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { BrowserProvider, Contract } from "ethers";
 import { useWeb3ModalAccount, useWeb3ModalProvider } from '@web3modal/ethers/react';
 import { OnboardAgentABI } from '../abi/OnboardAgent';
+import { Send } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import Image from 'next/image';
 import JsonDisplay from './JsonDisplay';
 
 interface Message {
-  role: string;
+  role: 'user' | 'assistant';
   content: string;
   type?: 'text' | 'image' | 'json';
+  isLoading?: boolean;
 }
 
 interface AgentRun {
@@ -22,6 +27,31 @@ interface AgentRun {
 
 const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || '';
 
+const PulsatingOrb = () => (
+  <motion.div
+    className="w-3 h-3 bg-primary rounded-full inline-block mr-2"
+    animate={{
+      scale: [1, 1.2, 1],
+      opacity: [0.5, 1, 0.5],
+    }}
+    transition={{
+      duration: 1.5,
+      repeat: Infinity,
+      ease: "easeInOut",
+    }}
+  />
+)
+
+const AnimatedEllipsis = () => (
+  <motion.span
+    className="inline-block w-4 text-primary"
+    animate={{ opacity: [0, 1, 0] }}
+    transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+  >
+    ...
+  </motion.span>
+)
+
 export const AgentTest = () => {
   const { walletProvider } = useWeb3ModalProvider();
   const { address, isConnected } = useWeb3ModalAccount();
@@ -32,6 +62,8 @@ export const AgentTest = () => {
   const [agentRun, setAgentRun] = useState<AgentRun | undefined>();
   const [query, setQuery] = useState<string>('');
   const [maxIterations, setMaxIterations] = useState<number>(5);
+  const [isTyping, setIsTyping] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const initializeContract = async () => {
@@ -46,6 +78,10 @@ export const AgentTest = () => {
     initializeContract();
   }, [isConnected, walletProvider]);
 
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [agentRun]);
+
   const connectWallet = async () => {
     if (walletProvider) {
       try {
@@ -57,14 +93,6 @@ export const AgentTest = () => {
   };
 
   const getAgentRun = async (newRunId: number) => {
-    setIsLoading(false);
-    let currentAgentRun: AgentRun = {
-      id: newRunId,
-      owner: address || "",
-      messages: [],
-      isFinished: false,
-    };
-  
     let contractInstance = contract;
     if (!contractInstance && walletProvider) {
       const ethersProvider = new BrowserProvider(walletProvider);
@@ -77,24 +105,35 @@ export const AgentTest = () => {
     if (contractInstance) {
       const messages = await contractInstance.getMessageHistory(newRunId);
       const isFinished = await contractInstance.isRunFinished(newRunId);
-      currentAgentRun.isFinished = isFinished;
   
-      const formattedMessages: Message[] = messages.map((message: any) => ({
-        role: message.role,
-        content: message.content[0].value,
-        type: determineContentType(message.content[0].value),
+      const formattedMessages: Message[] = messages
+        .filter((message: any) => message.role !== 'system')
+        .map((message: any) => ({
+          role: message.role,
+          content: message.content[0].value,
+          type: determineContentType(message.content[0].value),
+        }));
+  
+      // Filter out duplicate user messages
+      const uniqueMessages = formattedMessages.filter((message, index, self) =>
+        index === self.findIndex((t) => t.role === message.role && t.content === message.content)
+      );
+  
+      setAgentRun(prev => ({
+        ...prev,
+        id: newRunId,
+        owner: address || "",
+        messages: uniqueMessages,
+        isFinished: isFinished,
       }));
+      setIsWaitingResponse(!isFinished);
   
-      currentAgentRun.messages = formattedMessages;
+      console.log("Message roles:", uniqueMessages.map(msg => msg.role));
   
-      console.log("Message roles:", formattedMessages.map(msg => msg.role));
-      setAgentRun(currentAgentRun);
-      setIsWaitingResponse(!currentAgentRun.isFinished);
-    }
-  
-    if (!currentAgentRun.isFinished) {
-      await new Promise(r => setTimeout(r, 2000));
-      await getAgentRun(newRunId);
+      if (!isFinished) {
+        await new Promise(r => setTimeout(r, 2000));
+        await getAgentRun(newRunId);
+      }
     }
   };
   
@@ -110,17 +149,20 @@ export const AgentTest = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isConnected) {
-      await connectWallet();
-      return;
-    }
-    
-    if (!contract) {
-      console.error("Contract is not initialized");
+    if (!isConnected || !contract || !query.trim()) {
       return;
     }
   
-    setIsLoading(true);
+    const userMessage: Message = { role: 'user', content: query, type: 'text' };
+    setAgentRun(prev => ({
+      id: prev?.id || 0,
+      owner: prev?.owner || address || "",
+      messages: [...(prev?.messages || []), userMessage],
+      isFinished: false,
+    }));
+    setQuery('');
+    setIsWaitingResponse(true);
+  
     try {
       const tx = await contract.runAgent(query, maxIterations);
       console.log("Transaction sent:", tx.hash);
@@ -129,12 +171,6 @@ export const AgentTest = () => {
       const newRunId = getAgentRunId(receipt);
       console.log("New run ID:", newRunId);
       if (newRunId !== null) {
-        setAgentRun({
-          id: newRunId,
-          owner: address || "",
-          messages: [],
-          isFinished: false,
-        });
         getAgentRun(newRunId);
       } else {
         throw new Error("Failed to get new run ID");
@@ -144,8 +180,7 @@ export const AgentTest = () => {
       if (error instanceof Error) {
         console.error("Error details:", error.message);
       }
-    } finally {
-      setIsLoading(false);
+      setIsWaitingResponse(false);
     }
   };
 
@@ -167,77 +202,63 @@ export const AgentTest = () => {
   };
 
   return (
-    <div className="flex flex-col gap-y-2 w-full pt-10 pb-32 bg-gray-100 text-gray-800">
-      <h1 className="text-3xl font-bold mb-6 text-blue-600">Agent Test</h1>
-      <form onSubmit={handleSubmit} className="mb-6 bg-white p-6 rounded-lg shadow-md">
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Enter your query"
-          className="border border-gray-300 p-2 mr-2 rounded w-full mb-4"
-        />
-        <input
-          type="number"
-          value={maxIterations}
-          onChange={(e) => setMaxIterations(Number(e.target.value))}
-          placeholder="Max iterations"
-          className="border border-gray-300 p-2 mr-2 rounded w-full mb-4"
-        />
-        <button 
-          type="submit" 
-          disabled={isLoading} 
-          className={`w-full p-2 rounded ${
-            isLoading 
-              ? 'bg-gray-400 cursor-not-allowed' 
-              : isConnected 
-                ? 'bg-green-500 hover:bg-green-600' 
-                : 'bg-blue-500 hover:bg-blue-600'
-          } text-white font-semibold transition duration-300`}
-        >
-          {isLoading ? 'Running...' : isConnected ? 'Run Agent' : 'Connect Wallet'}
-        </button>
-      </form>
-      {agentRun && (
-        <div className="flex flex-col gap-y-6 pt-6 bg-white p-6 rounded-lg shadow-md">
-          {agentRun.messages.slice(1).map((message, index) => (
-            <div key={index} className={`p-4 rounded-lg ${
-              message.role === 'assistant' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
-            }`}>
-              <strong className="block mb-2 text-lg">
-                {message.role.toUpperCase()}:
-              </strong>
-              {message.type === 'image' ? (
-                <div className="relative w-full h-64">
-                  <Image 
-                    src={message.content} 
-                    alt="Generated image" 
-                    layout="fill"
-                    objectFit="contain"
-                    className="rounded-lg"
-                  />
-                </div>
-              ) : message.type === 'json' ? (
-                <JsonDisplay jsonString={message.content} />
-              ) : (
-                <p className="whitespace-pre-wrap">{message.content}</p>
-              )}
-            </div>
+    <div className="flex flex-col h-full">
+      <main className="flex-grow overflow-auto p-4 pt-16 bg-background text-foreground transition-colors duration-500">
+        <AnimatePresence>
+          {agentRun?.messages.map((message, index) => (
+            <motion.div
+              key={index}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.5 }}
+              className={`mb-4 ${message.role === 'user' ? 'flex justify-end' : 'flex justify-start'}`}
+            >
+              <div
+                className={`max-w-[70%] p-3 rounded-lg ${
+                  message.role === 'user' 
+                    ? 'bg-blue-500 text-white rounded-br-none' 
+                    : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-bl-none'
+                }`}
+              >
+                {message.type === 'image' ? (
+                  <div className="flex justify-center">
+                    <Image src={message.content} alt="Generated image" width={300} height={300} className="rounded-lg" />
+                  </div>
+                ) : message.type === 'json' ? (
+                  <JsonDisplay jsonString={message.content} />
+                ) : (
+                  <p className="whitespace-pre-wrap">{message.content}</p>
+                )}
+              </div>
+            </motion.div>
           ))}
-          {isWaitingResponse && (
-            <div className="text-center text-yellow-600 font-semibold">
-              Waiting for agent&apos;s response...
+        </AnimatePresence>
+        {isWaitingResponse && (
+          <div className="flex justify-start mb-4">
+            <div className="bg-secondary text-secondary-foreground p-3 rounded-lg rounded-bl-none">
+              <PulsatingOrb />
+              Generating response
+              <AnimatedEllipsis />
             </div>
-          )}
-          {agentRun.isFinished && (
-            <div className="text-center text-green-600 font-semibold">
-              Agent run completed.
-            </div>
-          )}
+          </div>
+        )}
+        <div ref={chatEndRef} />
+      </main>
+      <footer className="p-4 bg-background">
+        <div className="flex items-center space-x-2">
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Type your message..."
+            onKeyPress={(e) => e.key === 'Enter' && handleSubmit(e)}
+            className="flex-grow"
+          />
+          <Button onClick={handleSubmit} disabled={isLoading || isWaitingResponse}>
+            <Send className="h-5 w-5" />
+          </Button>
         </div>
-      )}
+      </footer>
     </div>
   );
 };
-
-export default AgentTest;
