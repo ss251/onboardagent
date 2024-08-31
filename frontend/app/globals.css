@@ -1,4 +1,45 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+.markdown-content {
+    @apply text-sm leading-relaxed;
+  }
   
+  .markdown-content p {
+    @apply mb-4 last:mb-0; /* Remove bottom margin on last paragraph */
+  }
+  
+  .markdown-content h1, .markdown-content h2, .markdown-content h3 {
+    @apply font-bold mt-6 mb-4;
+  }
+  
+  .markdown-content ul, .markdown-content ol {
+    @apply ml-6 mb-4 list-disc;
+  }
+  
+  .markdown-content li {
+    @apply mb-2;
+  }
+  
+  .code-block-wrapper {
+    @apply my-4 rounded-lg overflow-hidden;
+    background-color: #1e1e1e; /* Dark background for code blocks */
+  }
+  
+  .inline-code {
+    @apply px-1 py-0.5 rounded bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200;
+  }
+  
+  /* Update the message bubble styles */
+  .message-bubble {
+    @apply p-3 rounded-lg max-w-[70%];
+  }
+  
+  .user-message {
+    @apply bg-blue-500 text-white rounded-br-none;
+  }
+  
+  .assistant-message {
+    @apply bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-bl-none;
+  }

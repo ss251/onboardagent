@@ -10,6 +10,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import Image from 'next/image';
 import JsonDisplay from './JsonDisplay';
+import ReactMarkdown from 'react-markdown';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -52,6 +55,14 @@ const AnimatedEllipsis = () => (
   </motion.span>
 )
 
+const CodeBlock = ({ language, value }: { language: string, value: string }) => {
+  return (
+    <SyntaxHighlighter language={language} style={vscDarkPlus as any}>
+      {value}
+    </SyntaxHighlighter>
+  );
+};
+
 export const AgentTest = () => {
   const { walletProvider } = useWeb3ModalProvider();
   const { address, isConnected } = useWeb3ModalAccount();
@@ -89,6 +100,47 @@ export const AgentTest = () => {
       } catch (error) {
         console.error("Failed to connect wallet:", error);
       }
+    }
+  };
+
+  const renderMessage = (message: Message) => {
+    if (message.type === 'image') {
+      return (
+        <div className="flex justify-center">
+          <Image src={message.content} alt="Generated image" width={300} height={300} className="rounded-lg" />
+        </div>
+      );
+    } else if (message.type === 'json') {
+      return <JsonDisplay jsonString={message.content} />;
+    } else {
+      return (
+        <div className="markdown-content">
+          <ReactMarkdown
+            components={{
+              code({ node, className, children, ...props }) {
+                const match = /language-(\w+)/.exec(className || '');
+                const language = match ? match[1] : '';
+                const isInline = !match && children && typeof children === 'string' && !children.includes('\n');
+                
+                return isInline ? (
+                  <code className="inline-code" {...props}>
+                    {children}
+                  </code>
+                ) : (
+                  <div className="code-block-wrapper">
+                    <CodeBlock
+                      language={language}
+                      value={String(children).replace(/\n$/, '')}
+                    />
+                  </div>
+                );
+              },
+            }}
+          >
+            {message.content}
+          </ReactMarkdown>
+        </div>
+      );
     }
   };
 
@@ -204,36 +256,22 @@ export const AgentTest = () => {
   return (
     <div className="flex flex-col h-full">
       <main className="flex-grow overflow-auto p-4 pt-16 bg-background text-foreground transition-colors duration-500">
-        <AnimatePresence>
-          {agentRun?.messages.map((message, index) => (
-            <motion.div
-              key={index}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.5 }}
-              className={`mb-4 ${message.role === 'user' ? 'flex justify-end' : 'flex justify-start'}`}
-            >
-              <div
-                className={`max-w-[70%] p-3 rounded-lg ${
-                  message.role === 'user' 
-                    ? 'bg-blue-500 text-white rounded-br-none' 
-                    : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-bl-none'
-                }`}
-              >
-                {message.type === 'image' ? (
-                  <div className="flex justify-center">
-                    <Image src={message.content} alt="Generated image" width={300} height={300} className="rounded-lg" />
-                  </div>
-                ) : message.type === 'json' ? (
-                  <JsonDisplay jsonString={message.content} />
-                ) : (
-                  <p className="whitespace-pre-wrap">{message.content}</p>
-                )}
-              </div>
-            </motion.div>
-          ))}
-        </AnimatePresence>
+      <AnimatePresence>
+        {agentRun?.messages.map((message, index) => (
+          <motion.div
+            key={index}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.5 }}
+            className={`mb-4 ${message.role === 'user' ? 'flex justify-end' : 'flex justify-start'}`}
+          >
+            <div className={`message-bubble ${message.role === 'user' ? 'user-message' : 'assistant-message'}`}>
+              {renderMessage(message)}
+            </div>
+          </motion.div>
+        ))}
+      </AnimatePresence>
         {isWaitingResponse && (
           <div className="flex justify-start mb-4">
             <div className="bg-secondary text-secondary-foreground p-3 rounded-lg rounded-bl-none">
