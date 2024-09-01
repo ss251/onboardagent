@@ -51,10 +51,28 @@ contract OnboardAgent {
             stop: "", // null
             temperature: 10, // Example temperature (scaled up, 10 means 1.0), > 20 means null
             topP: 101, // Percentage 0-100, > 100 means null
-            tools: '[{"type":"function","function":{"name":"web_search","description":"Search the internet","parameters":{"type":"object","properties":{"query":{"type":"string","description":"Search query"}},"required":["query"]}}},{"type":"function","function":{"name":"image_generation","description":"Generates an image using Dalle-2","parameters":{"type":"object","properties":{"prompt":{"type":"string","description":"Dalle-2 prompt to generate an image"}},"required":["prompt"]}}}]',
+            tools: '[{\"type\":\"function\",\"function\":{\"name\":\"web_search\",\"description\":\"Search the internet\",\"parameters\":{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"Search query\"}},\"required\":[\"query\"]}}},{\"type\":\"function\",\"function\":{\"name\":\"image_generation\",\"description\":\"Generates an image using Dalle-2\",\"parameters\":{\"type\":\"object\",\"properties\":{\"prompt\":{\"type\":\"string\",\"description\":\"Dalle-2 prompt to generate an image\"}},\"required\":[\"prompt\"]}}},{\"type\":\"function\",\"function\":{\"name\":\"code_interpreter\",\"description\":\"Evaluates python code in a sandbox environment. The environment resets on every execution. You must send the whole script every time and print your outputs. Script should be pure python code that can be evaluated. It should be in python format NOT markdown. The code should NOT be wrapped in backticks. All python packages including requests, matplotlib, scipy, numpy, pandas, etc are available. Output can only be read from stdout, and stdin. Do not use things like plot.show() as it will not work. print() any output and results so you can capture the output.\",\"parameters\":{\"type\":\"object\",\"properties\":{\"code\":{\"type\":\"string\",\"description\":\"The pure python script to be evaluated. The contents will be in main.py. It should not be in markdown format.\"}},\"required\":[\"code\"]}}}]',
             toolChoice: "auto", // "none" or "auto"
             user: "" // null
         });
+    }
+
+    function handleIntent(string memory intent, string memory data) public {
+        if (compareStrings(intent, "cast_to_farcaster")) {
+            // Generate content using LLM and return to frontend
+            runAgent(intent, data, 5);
+        } else {
+            // If no intent is determined, generate content normally
+            runAgent(intent, data, 5);
+        }
+    }
+
+    function modifySystemPrompt(string memory intent) private {
+        if (compareStrings(intent, "cast_to_farcaster")) {
+            prompt = "Assist the user in generating content for Farcaster. This may include text content, image content, or both. Ensure the content is engaging and suitable for posting on a decentralized social platform.";
+        } else {
+            prompt = "You are an advanced AI assistant designed to onboard and guide users through various Web3 and blockchain operations. Your capabilities include:\n\n1. Token swaps: Assist users in exchanging one cryptocurrency for another.\n2. Token bridging: Help users transfer tokens between different blockchain networks.\n3. Social media interactions: Guide users in creating posts on decentralized social platforms like Lens or Farcaster.\n4. Asset viewing: Provide information about a user's digital assets across various blockchains.\n5. NFT generation: Assist in the process of creating and minting new NFTs.\n\nWhen responding to queries:\n- Provide technically accurate and detailed information.\n- Prioritize security and best practices in all operations.\n- Explain complex concepts in a clear, concise manner.\n- When multiple steps are required, break them down clearly.\n- If a user's request is unclear or could lead to potential issues, ask for clarification.\n- Do not execute more operations than necessary to complete the user's request.\n- If a task cannot be completed in a single interaction, explain why and what further steps might be needed.\n\nRemember, your role is to guide and educate, ensuring users make informed decisions in their blockchain interactions.";
+        }
     }
 
     // @notice Ensures the caller is the contract owner
@@ -77,13 +95,17 @@ contract OnboardAgent {
     }
 
     // @notice Starts a new agent run
+    // @param intent The user intent
     // @param query The initial user query
     // @param max_iterations The maximum number of iterations for the agent run
     // @return The ID of the newly created agent run
     function runAgent(
+        string memory intent,
         string memory query,
         uint8 max_iterations
     ) public returns (uint) {
+        modifySystemPrompt(intent);
+
         AgentRun storage run = agentRuns[agentRunCount];
 
         run.owner = msg.sender;
