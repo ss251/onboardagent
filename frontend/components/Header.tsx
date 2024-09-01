@@ -6,6 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { useTheme } from "next-themes";
 import ConnectButton from "./ConnectButton";
 import { useState, useEffect } from "react";
+import { useWeb3ModalTheme } from '@web3modal/ethers/react'
 
 interface HeaderProps {
   className?: string;
@@ -14,10 +15,26 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({ className }) => {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
+  const { setThemeMode: setWeb3ModalTheme, setThemeVariables } = useWeb3ModalTheme()
+  const [isScrolled, setIsScrolled] = useState(false);
 
   useEffect(() => {
     setMounted(true);
+
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 0);
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  useEffect(() => {
+    if (theme) {
+      // Sync Web3Modal theme with app theme
+      setWeb3ModalTheme(theme as 'light' | 'dark')
+    }
+  }, [theme])
 
   if (!mounted) {
     return null;
@@ -25,7 +42,14 @@ export const Header: React.FC<HeaderProps> = ({ className }) => {
 
   return (
     <nav
-      className={`flex justify-between items-center p-4 bg-background text-foreground ${className}`}
+      className={`
+        fixed top-0 left-0 right-0 z-10
+        flex justify-between items-center p-4
+        bg-background text-foreground
+        transition-all duration-300
+        ${isScrolled ? 'bg-white/70 dark:bg-black/50  backdrop-blur-sm shadow-sm' : ''}
+        ${className}
+      `}
     >
       <h1 className="text-2xl font-bold">Onboard Agent</h1>
       <div className="flex items-center space-x-2">
