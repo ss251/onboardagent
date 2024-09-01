@@ -75,6 +75,7 @@ export const AgentTest = () => {
   const [maxIterations, setMaxIterations] = useState<number>(5);
   const [isTyping, setIsTyping] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const [isPreparingFarcaster, setIsPreparingFarcaster] = useState(false);
 
   useEffect(() => {
     const initializeContract = async () => {
@@ -85,7 +86,7 @@ export const AgentTest = () => {
         setContract(newContract);
       }
     };
-  
+
     initializeContract();
   }, [isConnected, walletProvider]);
 
@@ -133,6 +134,13 @@ export const AgentTest = () => {
                       value={String(children).replace(/\n$/, '')}
                     />
                   </div>
+                );
+              },
+              a({ href, children, ...props }) {
+                return (
+                  <a href={href} target="_blank" className="text-blue-500 underline" {...props}>
+                    {children}
+                  </a>
                 );
               },
             }}
@@ -216,22 +224,152 @@ export const AgentTest = () => {
     setIsWaitingResponse(true);
   
     try {
-      const tx = await contract.runAgent(query, maxIterations);
-      console.log("Transaction sent:", tx.hash);
-      const receipt = await tx.wait();
-      console.log("Transaction receipt:", receipt);
-      const newRunId = getAgentRunId(receipt);
-      console.log("New run ID:", newRunId);
-      if (newRunId !== null) {
-        getAgentRun(newRunId);
+      const intent = determineIntent(query);
+      if (intent === 'cast_to_farcaster') {
+        await handleFarcasterIntent(query);
       } else {
-        throw new Error("Failed to get new run ID");
+        const tx = await contract.handleIntent(intent, query);
+        console.log("Transaction sent:", tx.hash);
+        const receipt = await tx.wait();
+        console.log("Transaction receipt:", receipt);
+        const newRunId = getAgentRunId(receipt);
+        console.log("New run ID:", newRunId);
+        if (newRunId !== null) {
+          getAgentRun(newRunId);
+        } else {
+          throw new Error("Failed to get new run ID");
+        }
       }
     } catch (error) {
       console.error("Error running agent:", error);
       if (error instanceof Error) {
         console.error("Error details:", error.message);
       }
+      setIsWaitingResponse(false);
+    }
+  };
+
+  const determineIntent = (query: string): string => {
+    if (query.includes("display wallet info")) {
+      return "display_wallet_info";
+    } else if (query.includes("token swap")) {
+      return "token_swap";
+    } else if (query.includes("bridge tokens")) {
+      return "bridge_tokens";
+    } else if (query.includes("send tokens")) {
+      return "send_tokens";
+    } else if (query.includes("cast to farcaster")) {
+      return "cast_to_farcaster";
+    } else {
+      return "unknown";
+    }
+  };
+
+  const handleFarcasterIntent = async (query: string) => {
+    if (!isConnected || !contract || !query.trim()) {
+      return;
+    }
+    try {
+      console.log("Handling Farcaster intent with query:", query);
+      const tx = await contract.handleIntent("cast_to_farcaster", query);
+      console.log("Transaction sent:", tx.hash);
+      const receipt = await tx.wait();
+      console.log("Transaction receipt:", receipt);
+      const newRunId = getAgentRunId(receipt);
+      console.log("New run ID:", newRunId);
+      if (newRunId !== null) {
+        await waitForAgentRunToFinish(newRunId);
+      } else {
+        throw new Error("Failed to get new run ID");
+      }
+    } catch (error) {
+      console.error("Error handling Farcaster intent:", error);
+    }
+  };
+  
+  const waitForAgentRunToFinish = async (runId: number) => {
+    if (!isConnected || !contract || !query.trim()) {
+      return;
+    }
+    let isFinished = false;
+    let messages: Message[] = [];
+  
+    while (!isFinished) {
+      const agentMessages = await contract.getMessageHistory(runId);
+      messages = agentMessages
+        .filter((msg: any) => msg.role !== 'system')
+        .map((msg: any) => ({
+          role: msg.role,
+          content: msg.content[0].value,
+          type: determineContentType(msg.content[0].value),
+        }));
+      isFinished = await contract.isRunFinished(runId);
+      if (!isFinished) {
+        console.log("Waiting for agent run to finish...");
+        await new Promise(r => setTimeout(r, 2000));
+      }
+    }
+  
+    console.log("Generated messages:", messages);
+    setAgentRun(prev => {
+      if (!prev) return undefined;
+      // Filter out the user message as it's already displayed
+      const newMessages = messages.filter(msg => msg.role !== 'user');
+      return {
+        ...prev,
+        messages: [...prev.messages, ...newMessages],
+      };
+    });
+    if (messages.length > 0 && messages[messages.length - 1].role === 'assistant') {
+      await prepareFarcasterContent(messages);
+    }
+    setIsWaitingResponse(false);
+  };
+
+  const prepareFarcasterContent = async (messages: Message[]) => {
+    try {
+      setIsPreparingFarcaster(true);
+      console.log("Preparing Farcaster content:", messages);
+  
+      let textContent = '';
+      let imageUrl = null;
+  
+      for (const message of messages) {
+        if (message.type === 'text' && message.role === 'assistant' && message.content.startsWith('Farcaster content:')) {
+          textContent = message.content.replace('Farcaster content:', '').trim();
+        } else if (message.type === 'image' && message.role === 'assistant') {
+          imageUrl = message.content;
+        }
+      }
+  
+      console.log("Extracted text content:", textContent);
+      console.log("Extracted image URL:", imageUrl);
+  
+      const response = await fetch('/api/castToFarcaster', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ content: textContent, imageUrl }),
+      });
+      const data = await response.json();
+      console.log("Farcaster response:", data);
+      if (data.success && data.url) {
+        setAgentRun(prev => {
+          if (!prev) return undefined;
+          return {
+            ...prev,
+            messages: [
+              ...prev.messages,
+              { role: 'assistant', content: `Click [here](${data.url}) to cast to Farcaster`, type: 'text' }
+            ],
+          };
+        });
+      }
+    } catch (error) {
+      console.error("Error preparing Farcaster content:", error);
+    } finally {
+      setIsPreparingFarcaster(false);
       setIsWaitingResponse(false);
     }
   };
@@ -255,7 +393,7 @@ export const AgentTest = () => {
 
   return (
     <div className="flex flex-col h-full">
-      <main className="flex-grow overflow-auto p-4 pt-16 bg-background text-foreground transition-colors duration-500">
+      <main className="flex-grow overflow-auto p-4 pt-20 bg-background text-foreground transition-colors duration-500">
       <AnimatePresence>
         {agentRun?.messages.map((message, index) => (
           <motion.div
@@ -272,11 +410,20 @@ export const AgentTest = () => {
           </motion.div>
         ))}
       </AnimatePresence>
-        {isWaitingResponse && (
+      {isWaitingResponse && !isPreparingFarcaster && (
+        <div className="flex justify-start mb-4">
+          <div className="bg-secondary text-secondary-foreground p-3 rounded-lg rounded-bl-none">
+            <PulsatingOrb />
+            Generating response
+            <AnimatedEllipsis />
+          </div>
+        </div>
+        )}
+        {isPreparingFarcaster && (
           <div className="flex justify-start mb-4">
             <div className="bg-secondary text-secondary-foreground p-3 rounded-lg rounded-bl-none">
               <PulsatingOrb />
-              Generating response
+              Preparing Farcaster content
               <AnimatedEllipsis />
             </div>
           </div>
