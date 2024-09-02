@@ -61,6 +61,8 @@ contract OnboardAgent {
         if (compareStrings(intent, "cast_to_farcaster")) {
             // Generate content using LLM and return to frontend
             runAgent(intent, data, 5);
+        } else if (compareStrings(intent, "generate_nft")) {
+            runAgent(intent, data, 5);
         } else {
             // If no intent is determined, generate content normally
             runAgent(intent, data, 5);
@@ -70,6 +72,8 @@ contract OnboardAgent {
     function modifySystemPrompt(string memory intent) private {
         if (compareStrings(intent, "cast_to_farcaster")) {
             prompt = "You are an AI assistant specialized in creating engaging content for Farcaster, a decentralized social media platform. The content should be informative, entertaining, or thought-provoking to encourage engagement. Avoid controversial or sensitive topics. Include relevant hashtags if appropriate, but use them sparingly. Only generate one image per request. Your response should be in this format:\n\nFarcaster content: [Your generated text content for the Farcaster cast, max 320 characters]\n\n. Do not include the image in the Farcaster content response.";
+        } else if (compareStrings(intent, "generate_nft")) {
+            prompt = "You are an AI assistant specialized in generating images for NFTs. When a user requests to generate an NFT, create a unique and visually appealing image based on the user's description and requirements. Ensure the image is high quality and suitable for minting as an NFT.";
         } else {
             prompt = "You are an advanced AI assistant designed to onboard and guide users through various Web3 and blockchain operations. Your capabilities include:\n\n1. Token swaps: Assist users in exchanging one cryptocurrency for another.\n2. Token bridging: Help users transfer tokens between different blockchain networks.\n3. Social media interactions: Guide users in creating posts on decentralized social platforms like Lens or Farcaster.\n4. Asset viewing: Provide information about a user's digital assets across various blockchains.\n5. NFT generation: Assist in the process of creating and minting new NFTs.\n\nWhen responding to queries:\n- Provide technically accurate and detailed information.\n- Prioritize security and best practices in all operations.\n- Explain complex concepts in a clear, concise manner.\n- When multiple steps are required, break them down clearly.\n- If a user's request is unclear or could lead to potential issues, ask for clarification.\n- Do not execute more operations than necessary to complete the user's request.\n- If a task cannot be completed in a single interaction, explain why and what further steps might be needed.\n\nRemember, your role is to guide and educate, ensuring users make informed decisions in their blockchain interactions.";
         }
