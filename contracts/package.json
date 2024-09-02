@@ -11,6 +11,7 @@
     "compile": "npx hardhat compile",
     "test": "npx hardhat test",
     "deployOnboardAgent:galadriel": "npx hardhat run scripts/deployOnboardAgent.ts --network galadriel",
+    "deployDalleNft:galadriel": "npx hardhat run scripts/deployDalleNft.ts --network galadriel",
     "generateStandardJson": "npx hardhat solidity-json",
     "debug": "npx hardhat test scripts/debugContract.ts"
   },

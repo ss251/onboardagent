@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { BrowserProvider, Contract } from "ethers";
 import { useWeb3ModalAccount, useWeb3ModalProvider } from '@web3modal/ethers/react';
 import { OnboardAgentABI } from '../abi/OnboardAgent';
+import { DalleNftABI } from "@/abi/DalleNft";
 import { Send } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button'
@@ -12,6 +13,7 @@ import Image from 'next/image';
 import JsonDisplay from './JsonDisplay';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { ethers, TransactionReceipt } from 'ethers';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 
 interface Message {
@@ -28,7 +30,8 @@ interface AgentRun {
   isFinished: boolean;
 }
 
-const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || '';
+const ONBOARD_AGENT_CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_ONBOARD_AGENT_CONTRACT_ADDRESS || '';
+const DALLE_NFT_CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_DALLE_NFT_CONTRACT_ADDRESS || '';
 
 const PulsatingOrb = () => (
   <motion.div
@@ -67,7 +70,8 @@ export const AgentTest = () => {
   const { walletProvider } = useWeb3ModalProvider();
   const { address, isConnected } = useWeb3ModalAccount();
 
-  const [contract, setContract] = useState<Contract | undefined>();
+  const [onboardAgentContract, setOnboardAgentContract] = useState<Contract | null>(null);
+  const [dalleNftContract, setDalleNftContract] = useState<Contract | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isWaitingResponse, setIsWaitingResponse] = useState<boolean>(false);
   const [agentRun, setAgentRun] = useState<AgentRun | undefined>();
@@ -76,19 +80,29 @@ export const AgentTest = () => {
   const [isTyping, setIsTyping] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const [isPreparingFarcaster, setIsPreparingFarcaster] = useState(false);
+  const [metadata, setMetadata] = useState({
+    name: '',
+    description: '',
+    externalUrl: '',
+    attributes: ['']
+  });
+
+  const initializeContracts = async () => {
+    if (walletProvider) {
+      const ethersProvider = new BrowserProvider(walletProvider);
+      const signer = await ethersProvider.getSigner();
+
+      const onboardAgent = new Contract(ONBOARD_AGENT_CONTRACT_ADDRESS, OnboardAgentABI.abi, signer);
+      setOnboardAgentContract(onboardAgent);
+
+      const dalleNft = new Contract(DALLE_NFT_CONTRACT_ADDRESS, DalleNftABI.abi, signer);
+      setDalleNftContract(dalleNft);
+    }
+  };
 
   useEffect(() => {
-    const initializeContract = async () => {
-      if (isConnected && walletProvider) {
-        const ethersProvider = new BrowserProvider(walletProvider);
-        const signer = await ethersProvider.getSigner();
-        const newContract = new Contract(CONTRACT_ADDRESS, OnboardAgentABI.abi, signer);
-        setContract(newContract);
-      }
-    };
-
-    initializeContract();
-  }, [isConnected, walletProvider]);
+    initializeContracts();
+  }, [walletProvider]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -153,12 +167,12 @@ export const AgentTest = () => {
   };
 
   const getAgentRun = async (newRunId: number) => {
-    let contractInstance = contract;
+    let contractInstance = onboardAgentContract;
     if (!contractInstance && walletProvider) {
       const ethersProvider = new BrowserProvider(walletProvider);
       const signer = await ethersProvider.getSigner();
-      const newContract = new Contract(CONTRACT_ADDRESS, OnboardAgentABI.abi, signer);
-      setContract(newContract);
+      const newContract = new Contract(ONBOARD_AGENT_CONTRACT_ADDRESS, OnboardAgentABI.abi, signer);
+      setOnboardAgentContract(newContract);
       contractInstance = newContract;
     }
   
@@ -209,11 +223,11 @@ export const AgentTest = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isConnected || !contract || !query.trim()) {
+    if (!isConnected || !onboardAgentContract || !query.trim()) {
       return;
     }
-  
-    const userMessage: Message = { role: 'user', content: query, type: 'text' };
+
+  const userMessage: Message = { role: 'user', content: query, type: 'text' };
     setAgentRun(prev => ({
       id: prev?.id || 0,
       owner: prev?.owner || address || "",
@@ -222,13 +236,15 @@ export const AgentTest = () => {
     }));
     setQuery('');
     setIsWaitingResponse(true);
-  
+
     try {
       const intent = determineIntent(query);
       if (intent === 'cast_to_farcaster') {
         await handleFarcasterIntent(query);
+      } else if (intent === 'generate_nft') {
+        await handleGenerateNftIntent(query, metadata);
       } else {
-        const tx = await contract.handleIntent(intent, query);
+        const tx = await onboardAgentContract.handleIntent(intent, query);
         console.log("Transaction sent:", tx.hash);
         const receipt = await tx.wait();
         console.log("Transaction receipt:", receipt);
@@ -260,18 +276,20 @@ export const AgentTest = () => {
       return "send_tokens";
     } else if (query.includes("cast to farcaster")) {
       return "cast_to_farcaster";
+    } else if (query.includes("generate nft")) {
+      return "generate_nft";
     } else {
       return "unknown";
     }
   };
 
   const handleFarcasterIntent = async (query: string) => {
-    if (!isConnected || !contract || !query.trim()) {
+    if (!isConnected || !onboardAgentContract || !query.trim()) {
       return;
     }
     try {
       console.log("Handling Farcaster intent with query:", query);
-      const tx = await contract.handleIntent("cast_to_farcaster", query);
+      const tx = await onboardAgentContract.handleIntent("cast_to_farcaster", query);
       console.log("Transaction sent:", tx.hash);
       const receipt = await tx.wait();
       console.log("Transaction receipt:", receipt);
@@ -286,16 +304,116 @@ export const AgentTest = () => {
       console.error("Error handling Farcaster intent:", error);
     }
   };
+
+  const handleGenerateNftIntent = async (data: string, metadata: {
+    name: string
+    description: string
+    externalUrl: string
+    attributes: string[]
+  }) => {
+    if (!walletProvider || !dalleNftContract) {
+      console.error("Wallet not connected or contract not initialized");
+      return;
+    }
   
+    try {
+      console.log("Initializing mint with data:", data, "and metadata:", metadata);
+      const tx = await dalleNftContract.initializeMint(
+        data,
+        metadata.name,
+        metadata.description,
+        metadata.externalUrl || '',
+        metadata.attributes || []
+      );
+      console.log("Transaction sent:", tx.hash);
+      const receipt = await tx.wait();
+      console.log("Transaction receipt:", receipt);
+  
+      const newTokenId = getMintInputId(receipt, dalleNftContract);
+      console.log("New token ID:", newTokenId);
+  
+      if (newTokenId !== undefined) {
+        setIsWaitingResponse(true);
+        const tokenData = await pollTokenUri(dalleNftContract, newTokenId);
+        if (tokenData) {
+          console.log(`Token URI fetched successfully: ${tokenData.nftUrl}`);
+          await handleViewNftOnFarcaster(tokenData.nftUrl, tokenData.metadata, newTokenId);
+        }
+      } else {
+        throw new Error("Failed to get new token ID");
+      }
+    } catch (error) {
+      console.error("Error generating NFT:", error);
+      if (error instanceof Error) {
+        console.error("Error details:", error.message);
+      }
+    } finally {
+      setIsWaitingResponse(false);
+    }
+  };
+
+  const getMintInputId = (receipt: TransactionReceipt, contract: Contract): number | undefined => {
+    let mintInputId;
+    for (const log of receipt.logs) {
+      try {
+        const parsedLog = contract.interface.parseLog(log);
+        if (parsedLog && parsedLog.name === "MintInputCreated") {
+          mintInputId = ethers.toNumber(parsedLog.args[1]);
+        }
+      } catch (error) {
+        console.log("Could not parse log:", log);
+      }
+    }
+    return mintInputId;
+  };
+
+  const pollTokenUri = async (contract: Contract, tokenId: number): Promise<{ nftUrl: string, metadata: any } | undefined> => {
+    for (let i = 0; i < 120; i++) {
+      try {
+        const uri = await contract.tokenURI(tokenId);
+        if (uri) {
+          const base64Data = uri.split(',')[1];
+          const jsonString = Buffer.from(base64Data, 'base64').toString('utf-8');
+          const metadata = JSON.parse(jsonString);
+          return { nftUrl: metadata.image, metadata };
+        }
+      } catch (e) {
+        // Ignore errors and continue polling
+      }
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  };
+
+  const handleViewNftOnFarcaster = async (nftUrl: string, metadata: { description: string }, tokenId: number) => {
+    const explorerUrl = `https://explorer.galadriel.com/token/0xbf14632090839dc42E647273B71A4FD767B5DbBa/instance/${tokenId}`;
+    const warpcastUrl = generateWarpcastIntentUrl(explorerUrl, metadata.description);
+    setAgentRun(prev => {
+      if (!prev) return undefined;
+      return {
+        ...prev,
+        messages: [
+          ...prev.messages,
+          { role: 'assistant', content: `Click [here](${warpcastUrl}) to view the NFT on Farcaster`, type: 'text' }
+        ],
+      };
+    });
+  };
+  
+  const generateWarpcastIntentUrl = (explorerUrl: string, description: string) => {
+    const text = encodeURIComponent(`Check out my new NFT! ${description}`);
+    const embed = encodeURIComponent(explorerUrl);
+    return `https://warpcast.com/~/compose?text=${text}&embeds[]=${embed}`;
+  };
+
   const waitForAgentRunToFinish = async (runId: number) => {
-    if (!isConnected || !contract || !query.trim()) {
+    if (!isConnected || !onboardAgentContract || !query.trim()) {
       return;
     }
     let isFinished = false;
     let messages: Message[] = [];
   
     while (!isFinished) {
-      const agentMessages = await contract.getMessageHistory(runId);
+      const agentMessages = await onboardAgentContract.getMessageHistory(runId);
       messages = agentMessages
         .filter((msg: any) => msg.role !== 'system')
         .map((msg: any) => ({
@@ -303,7 +421,7 @@ export const AgentTest = () => {
           content: msg.content[0].value,
           type: determineContentType(msg.content[0].value),
         }));
-      isFinished = await contract.isRunFinished(runId);
+      isFinished = await onboardAgentContract.isRunFinished(runId);
       if (!isFinished) {
         console.log("Waiting for agent run to finish...");
         await new Promise(r => setTimeout(r, 2000));
@@ -377,7 +495,7 @@ export const AgentTest = () => {
   const getAgentRunId = (receipt: any): number | null => {
     for (const log of receipt.logs) {
       try {
-        const parsedLog = contract?.interface.parseLog(log);
+        const parsedLog = onboardAgentContract?.interface.parseLog(log);
         if (parsedLog && parsedLog.name === "AgentRunCreated") {
           return typeof parsedLog.args.runId === 'number' 
             ? parsedLog.args.runId 
@@ -389,6 +507,15 @@ export const AgentTest = () => {
       }
     }
     return null;
+  };
+
+  const handleMetadataChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    if (name === 'attributes') {
+      setMetadata({ ...metadata, [name]: value.split(',') });
+    } else {
+      setMetadata({ ...metadata, [name]: value });
+    }
   };
 
   return (
@@ -439,6 +566,34 @@ export const AgentTest = () => {
             onKeyPress={(e) => e.key === 'Enter' && handleSubmit(e)}
             className="flex-grow"
           />
+          {determineIntent(query) === 'generate_nft' && (
+            <>
+              <Input
+                name="name"
+                value={metadata.name}
+                onChange={handleMetadataChange}
+                placeholder="Enter NFT name"
+              />
+              <Input
+                name="description"
+                value={metadata.description}
+                onChange={handleMetadataChange}
+                placeholder="Enter NFT description"
+              />
+              <Input
+                name="externalUrl"
+                value={metadata.externalUrl}
+                onChange={handleMetadataChange}
+                placeholder="Enter external URL"
+              />
+              <Input
+                name="attributes"
+                value={metadata.attributes.join(',')}
+                onChange={handleMetadataChange}
+                placeholder="Enter attributes (comma-separated)"
+              />
+            </>
+          )}
           <Button onClick={handleSubmit} disabled={isLoading || isWaitingResponse}>
             <Send className="h-5 w-5" />
           </Button>

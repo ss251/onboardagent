@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.20;
 
-// Uncomment this line to use console.log
-// import "hardhat/console.sol";
 import {ERC721URIStorage, ERC721} from "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import {ERC721Enumerable} from "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import {IOracle} from "./interfaces/IOracle.sol";
+import "@openzeppelin/contracts/utils/Base64.sol";
 
 // @title DalleNft
 // @notice This contract integrates with teeML oracle to generate and mint NFTs based on user inputs.
@@ -15,6 +14,10 @@ contract DalleNft is ERC721, ERC721Enumerable, ERC721URIStorage {
     struct MintInput {
         address owner;
         string prompt;
+        string name;
+        string description;
+        string externalUrl;
+        string[] attributes;
         bool isMinted;
     }
 
@@ -23,6 +26,9 @@ contract DalleNft is ERC721, ERC721Enumerable, ERC721URIStorage {
 
     // @notice Event emitted when a new mint input is created
     event MintInputCreated(address indexed owner, uint indexed chatId);
+
+    // @notice Event emitted when the oracle responds
+    event OracleResponseReceived(uint256 chatId, string imageUrl);
 
     // @notice Address of the contract owner
     address private owner;
@@ -79,15 +85,23 @@ contract DalleNft is ERC721, ERC721Enumerable, ERC721URIStorage {
     // @notice Initializes the minting process for a new NFT
     // @param message The user input to generate the NFT
     // @return The ID of the created mint input
-    function initializeMint(string memory message) public returns (uint) {
+    function initializeMint(
+        string memory message,
+        string memory name,
+        string memory description,
+        string memory externalUrl,
+        string[] memory attributes
+    ) public returns (uint) {
         uint256 currentId = _nextTokenId++;
         MintInput storage mintInput = mintInputs[currentId];
 
         mintInput.owner = msg.sender;
         mintInput.prompt = message;
-
         mintInput.isMinted = false;
-
+        mintInput.name = name;
+        mintInput.description = description;
+        mintInput.externalUrl = externalUrl;
+        mintInput.attributes = attributes;
 
         string memory fullPrompt = prompt;
         fullPrompt = string.concat(fullPrompt, message);
@@ -105,19 +119,59 @@ contract DalleNft is ERC721, ERC721Enumerable, ERC721URIStorage {
     // @notice Handles the response from the oracle for the function call
     // @param runId The ID of the mint input
     // @param response The response from the oracle (token URI)
+    // @param errorMessage The error message from the oracle (if any)
     // @dev Called by teeML oracle
     function onOracleFunctionResponse(
         uint runId,
         string memory response,
         string memory /*errorMessage*/
     ) public onlyOracle {
+        emit OracleResponseReceived(runId, response);
         MintInput storage mintInput = mintInputs[runId];
         require(!mintInput.isMinted, "NFT already minted");
 
+        uint256 newTokenId = runId;
+        _safeMint(mintInput.owner, newTokenId);
+        
+        string memory generatedTokenURI = generateTokenURI(mintInput, response);
+        _setTokenURI(newTokenId, generatedTokenURI);
         mintInput.isMinted = true;
 
-        _mint(mintInput.owner, runId);
-        _setTokenURI(runId, response);
+        emit Transfer(address(0), mintInput.owner, newTokenId);
+    }
+
+    // @notice Generates the token URI with metadata
+    // @param mintInput The mint input data
+    // @param imageUrl The URL of the generated image
+    // @return The token URI
+    function generateTokenURI(MintInput memory mintInput, string memory imageUrl) internal pure returns (string memory) {
+        string memory attributes = generateAttributesJSON(mintInput.attributes);
+        
+        return string(abi.encodePacked(
+            'data:application/json;base64,',
+            Base64.encode(bytes(string(abi.encodePacked(
+                '{"name":"', mintInput.name,
+                '","description":"', mintInput.description,
+                '","external_url":"', mintInput.externalUrl,
+                '","image":"', imageUrl,
+                '","attributes":', attributes, '}'
+            ))))
+        ));
+    }
+
+    // @notice Generates the attributes JSON
+    // @param attributes The attributes array
+    // @return The attributes JSON string
+    function generateAttributesJSON(string[] memory attributes) internal pure returns (string memory) {
+        string memory result = "[";
+        for (uint i = 0; i < attributes.length; i++) {
+            if (i > 0) {
+                result = string(abi.encodePacked(result, ","));
+            }
+            result = string(abi.encodePacked(result, attributes[i]));
+        }
+        result = string(abi.encodePacked(result, "]"));
+        return result;
     }
 
     // @notice Retrieves the message history contents for a given chat ID
