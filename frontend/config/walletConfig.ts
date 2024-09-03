@@ -1,5 +1,6 @@
 import { defaultWagmiConfig } from '@web3modal/wagmi/react/config'
-import { cookieStorage, createStorage } from 'wagmi'
+import { cookieStorage, createStorage, http } from 'wagmi'
+import { polygon } from 'wagmi/chains'
 // import { mainnet, sepolia } from 'wagmi/chains'
 
 // Custom Galadriel Devnet chain configuration
@@ -33,9 +34,12 @@ export const metadata = {
 }
 
 // Create wagmiConfig
-const chains = [galadrielDevnet] as const
+const chains = [galadrielDevnet, polygon] as const
 export const config = defaultWagmiConfig({
   chains,
+  transports: {
+    [polygon.id]: http(),
+  },
   projectId,
   metadata,
   ssr: true,

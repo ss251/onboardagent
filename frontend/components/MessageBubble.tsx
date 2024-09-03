@@ -1,18 +1,25 @@
+import React from 'react';
 import { Message } from '../types/agent';
 import Image from 'next/image';
 import JsonDisplay from './JsonDisplay';
 import ReactMarkdown from 'react-markdown';
 import { CodeBlock } from './CodeBlock';
 
-export const MessageBubble = ({ message }: { message: Message }) => {
-  if (message.type === 'image') {
+export const MessageBubble = ({ message }: { message: Message | React.ReactElement }) => {
+  if (React.isValidElement(message)) {
+    return message;
+  }
+
+  const typedMessage = message as Message;
+
+  if (typedMessage.type === 'image') {
     return (
       <div className="flex justify-center">
-        <Image src={message.content} alt="Generated image" width={300} height={300} className="rounded-lg" />
+        <Image src={typedMessage.content} alt="Generated image" width={300} height={300} className="rounded-lg" />
       </div>
     );
-  } else if (message.type === 'json') {
-    return <JsonDisplay jsonString={message.content} />;
+  } else if (typedMessage.type === 'json') {
+    return <JsonDisplay jsonString={typedMessage.content} />;
   } else {
     return (
       <div className="markdown-content">
@@ -38,16 +45,16 @@ export const MessageBubble = ({ message }: { message: Message }) => {
             },
             a({ href, children, ...props }) {
               return (
-                <a href={href} target="_blank" className="text-blue-500 underline" {...props}>
+                <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-500 underline" {...props}>
                   {children}
                 </a>
               );
             },
           }}
         >
-          {message.content}
+          {typedMessage.content}
         </ReactMarkdown>
       </div>
     );
   }
-};
+}

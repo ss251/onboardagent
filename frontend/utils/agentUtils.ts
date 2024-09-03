@@ -24,6 +24,8 @@ export const determineIntent = (query: string): string => {
     return "cast_to_farcaster";
   } else if (query.includes("generate nft")) {
     return "generate_nft";
+  } else if (query.includes("post to lens")) {
+    return "post_to_lens";
   } else {
     return "unknown";
   }

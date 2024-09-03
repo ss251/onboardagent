@@ -16,6 +16,9 @@ import { PulsatingOrb } from './PulsatingOrb';
 import { AnimatedEllipsis } from './AnimatedEllipsis';
 import { MessageBubble } from './MessageBubble';
 import { MetadataInputs } from './MetadataInputs';
+import { useLogin, useCreatePost, useSession } from '@lens-protocol/react-web';
+import { LensAuth } from './LensAuth';
+import { SessionType } from "@lens-protocol/react-web";
 
 export const AgentTest = () => {
   const { walletProvider } = useWeb3ModalProvider();
@@ -35,6 +38,9 @@ export const AgentTest = () => {
     externalUrl: '',
     attributes: ['']
   });
+  const { data: session } = useSession();
+  const isLensAuthenticated = session?.type === SessionType.WithProfile;
+  const { execute: createPost, error: createPostError, loading: isCreatingPost } = useCreatePost();
 
   useEffect(() => {
     initializeContracts();
@@ -134,6 +140,8 @@ export const AgentTest = () => {
         await handleFarcasterIntent(query);
       } else if (intent === 'generate_nft') {
         await handleGenerateNftIntent(query, metadata);
+      } else if (intent === 'post_to_lens') {
+        await handleLensIntent(query);
       } else {
         const tx = await onboardAgentContract.handleIntent(intent, query);
         console.log("Transaction sent:", tx.hash);
@@ -217,6 +225,95 @@ export const AgentTest = () => {
       }
     } finally {
       setIsWaitingResponse(false);
+    }
+  };
+
+  const handleLensIntent = async (query: string) => {
+    if (!isConnected || !onboardAgentContract || !query.trim()) {
+      return;
+    }
+    if (!isLensAuthenticated) {
+      setAgentRun(prev => {
+        if (!prev) return undefined;
+        return {
+          ...prev,
+          messages: [
+            ...prev.messages,
+            { role: 'assistant', content: 'Please log in to Lens to post.', type: 'text' }
+          ],
+        };
+      });
+      return; // Exit the function here to prevent further execution
+    }
+  
+    try {
+      const tx = await onboardAgentContract.handleIntent("post_to_lens", query);
+      console.log("Transaction sent:", tx.hash);
+      const receipt = await tx.wait();
+      console.log("Transaction receipt:", receipt);
+      const newRunId = getAgentRunId(receipt, onboardAgentContract);
+      console.log("New run ID:", newRunId);
+      if (newRunId !== null) {
+        await waitForAgentRunToFinish(newRunId);
+        await postToLens();
+      } else {
+        throw new Error("Failed to get new run ID");
+      }
+    } catch (error) {
+      console.error("Error handling Lens intent:", error);
+    }
+  };
+  
+  const postToLens = async () => {
+    if (!agentRun || !agentRun.messages) return;
+  
+    const lastAssistantMessage = agentRun.messages
+      .filter(msg => msg.role === 'assistant')
+      .pop();
+  
+    if (!lastAssistantMessage) return;
+  
+    const content = lastAssistantMessage.content;
+  
+    try {
+      const response = await fetch('/api/pinata', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ content }),
+      });
+  
+      if (!response.ok) {
+        throw new Error('Failed to upload content to IPFS');
+      }
+  
+      const { ipfsHash } = await response.json();
+  
+      const result = await createPost({
+        metadata: `ipfs://${ipfsHash}`,
+      });
+  
+      if (result.isFailure()) {
+        console.error(result.error);
+        return;
+      }
+  
+      const post = await result.value.waitForCompletion();
+      console.log('Post created:', post);
+  
+      setAgentRun(prev => {
+        if (!prev) return undefined;
+        return {
+          ...prev,
+          messages: [
+            ...prev.messages,
+            { role: 'assistant', content: `Successfully posted to Lens. Post: ${post}`, type: 'text' }
+          ],
+        };
+      });
+    } catch (error) {
+      console.error('Error posting to Lens:', error);
     }
   };
 
@@ -350,6 +447,19 @@ export const AgentTest = () => {
           </motion.div>
         ))}
       </AnimatePresence>
+      {!isLensAuthenticated && determineIntent(query) === 'post_to_lens' && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -20 }}
+          transition={{ duration: 0.5 }}
+          className="flex justify-start mb-4"
+        >
+          <div className="message-bubble assistant-message">
+            <MessageBubble message={<LensAuth />} />
+          </div>
+        </motion.div>
+      )}
       {isWaitingResponse && !isPreparingFarcaster && (
         <div className="flex justify-start mb-4">
           <div className="bg-secondary text-secondary-foreground p-3 rounded-lg rounded-bl-none">

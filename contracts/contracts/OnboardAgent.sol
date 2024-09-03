@@ -63,6 +63,8 @@ contract OnboardAgent {
             runAgent(intent, data, 5);
         } else if (compareStrings(intent, "generate_nft")) {
             runAgent(intent, data, 5);
+        } else if (compareStrings(intent, "post_to_lens")) {
+            prompt = "You are an AI assistant specialized in creating engaging content for Lens Protocol, a decentralized social media platform. The content should be informative, entertaining, or thought-provoking to encourage engagement. Avoid controversial or sensitive topics. Include relevant hashtags if appropriate, but use them sparingly. Your response should be in this format:\n\nLens content: [Your generated text content for the Lens post, max 5000 characters]\n\n";
         } else {
             // If no intent is determined, generate content normally
             runAgent(intent, data, 5);
