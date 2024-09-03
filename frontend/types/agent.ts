@@ -1,8 +1,9 @@
+import { ReactNode } from 'react';
+
 export interface Message {
-  role: 'user' | 'assistant';
-  content: string;
-  type?: 'text' | 'image' | 'json';
-  isLoading?: boolean;
+  role: 'assistant' | 'user';
+  content: string | ReactNode;
+  type: string;
 }
 
 export interface AgentRun {

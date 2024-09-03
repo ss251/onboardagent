@@ -19,6 +19,8 @@ import { MetadataInputs } from './MetadataInputs';
 import { useLogin, useCreatePost, useSession } from '@lens-protocol/react-web';
 import { LensAuth } from './LensAuth';
 import { SessionType } from "@lens-protocol/react-web";
+import { v4 as uuidv4 } from 'uuid';
+import { LensPostSummary } from './LensPostSummary';
 
 export const AgentTest = () => {
   const { walletProvider } = useWeb3ModalProvider();
@@ -233,88 +235,122 @@ export const AgentTest = () => {
       return;
     }
     if (!isLensAuthenticated) {
-      setAgentRun(prev => {
-        if (!prev) return undefined;
-        return {
-          ...prev,
-          messages: [
-            ...prev.messages,
-            { role: 'assistant', content: 'Please log in to Lens to post.', type: 'text' }
-          ],
-        };
-      });
-      return; // Exit the function here to prevent further execution
+      addMessage('assistant', <LensAuth />);
+      return;
     }
   
     try {
       const tx = await onboardAgentContract.handleIntent("post_to_lens", query);
-      console.log("Transaction sent:", tx.hash);
+      const explorerUrl = `https://explorer.galadriel.com/tx/${tx.hash}`;
+      addMessage('assistant', `Transaction sent. [View on Explorer](${explorerUrl})`);
       const receipt = await tx.wait();
-      console.log("Transaction receipt:", receipt);
       const newRunId = getAgentRunId(receipt, onboardAgentContract);
-      console.log("New run ID:", newRunId);
       if (newRunId !== null) {
         await waitForAgentRunToFinish(newRunId);
-        await postToLens();
+        const messages = await onboardAgentContract.getMessageHistory(newRunId);
+        const assistantMessage = messages.find((msg: any) => msg.role === 'assistant');
+        if (assistantMessage) {
+          await postToLens(assistantMessage.content[0].value);
+        } else {
+          addMessage('assistant', 'Error: No content generated for Lens post.');
+        }
       } else {
         throw new Error("Failed to get new run ID");
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Error handling Lens intent:", error);
+      addMessage('assistant', `Error handling Lens intent. Please try again.`);
     }
   };
-  
-  const postToLens = async () => {
-    if (!agentRun || !agentRun.messages) return;
-  
-    const lastAssistantMessage = agentRun.messages
-      .filter(msg => msg.role === 'assistant')
-      .pop();
-  
-    if (!lastAssistantMessage) return;
-  
-    const content = lastAssistantMessage.content;
-  
+
+  const postToLens = async (content: string) => {
+    if (!session?.authenticated) {
+      console.error('Not authenticated with Lens');
+      addMessage('assistant', 'Error: Not authenticated with Lens. Please log in and try again.');
+      return;
+    }
+
     try {
+      const metadata = {
+        $schema: "https://json-schemas.lens.dev/publications/text-only/3.0.0.json",
+        lens: {
+          appId: "OnboardAgent",
+          content: content,
+          id: uuidv4(),
+          locale: "en",
+          mainContentFocus: "TEXT_ONLY",
+          name: "Post from OnboardAgent",
+          tags: ["OnboardAgent"],
+          version: "3.0.0"
+        },
+        description: content,
+      };
+
+      // Pin to IPFS only once
       const response = await fetch('/api/pinata', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify(metadata),
       });
-  
+
       if (!response.ok) {
         throw new Error('Failed to upload content to IPFS');
       }
-  
+
       const { ipfsHash } = await response.json();
-  
-      const result = await createPost({
-        metadata: `ipfs://${ipfsHash}`,
-      });
-  
-      if (result.isFailure()) {
-        console.error(result.error);
-        return;
+      const ipfsUri = `ipfs://${ipfsHash}`;
+
+      // Add a delay to allow for IPFS propagation
+      await new Promise(resolve => setTimeout(resolve, 5000)); // 5 second delay
+
+      addMessage('assistant', 'Posting to Lens...');
+
+      // Retry logic
+      const maxRetries = 5;
+      for (let i = 0; i < maxRetries; i++) {
+        try {
+          const result = await createPost({
+            metadata: ipfsUri,
+          });
+
+          if (result.isFailure()) {
+            throw new Error(result.error.message);
+          }
+
+          const post = await result.value.waitForCompletion();
+          console.log("Post created:", post);
+          addMessage('assistant', <LensPostSummary post={post} />);
+          return; // Success, exit the function
+        } catch (error: any) {
+          console.error(`Attempt ${i + 1} failed:`, error);
+          if (i === maxRetries - 1) {
+            // If this was the last attempt, throw the error
+            throw error;
+          }
+          // Wait before next retry
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
       }
-  
-      const post = await result.value.waitForCompletion();
-      console.log('Post created:', post);
-  
-      setAgentRun(prev => {
-        if (!prev) return undefined;
-        return {
-          ...prev,
-          messages: [
-            ...prev.messages,
-            { role: 'assistant', content: `Successfully posted to Lens. Post: ${post}`, type: 'text' }
-          ],
-        };
-      });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error posting to Lens:', error);
+      addMessage('assistant', `Failed to post to Lens. Please try again later.`);
     }
+  };
+
+  // Helper function to add messages to the chat
+  const addMessage = (role: 'assistant' | 'user', content: string | React.ReactNode) => {
+    setAgentRun(prev => {
+      if (!prev) return undefined;
+      return {
+        ...prev,
+        messages: [
+          ...prev.messages,
+          { role, content, type: 'text' }
+        ],
+      };
+    });
   };
 
   const handleViewNftOnFarcaster = async (nftUrl: string, metadata: { description: string }, tokenId: number) => {
@@ -365,7 +401,7 @@ export const AgentTest = () => {
         messages: [...prev.messages, ...newMessages],
       };
     });
-    if (messages.length > 0 && messages[messages.length - 1].role === 'assistant') {
+    if (messages.length > 0 && messages[messages.length - 1].role === 'assistant' && (determineIntent(query) === "cast_to_farcaster")) {
       await prepareFarcasterContent(messages);
     }
     setIsWaitingResponse(false);
@@ -380,7 +416,7 @@ export const AgentTest = () => {
       let imageUrl = null;
   
       for (const message of messages) {
-        if (message.type === 'text' && message.role === 'assistant' && message.content.startsWith('Farcaster content:')) {
+        if (message.type === 'text' && message.role === 'assistant' && typeof message.content === 'string' && message.content.startsWith('Farcaster content:')) {
           textContent = message.content.replace('Farcaster content:', '').trim();
         } else if (message.type === 'image' && message.role === 'assistant') {
           imageUrl = message.content;
@@ -447,7 +483,7 @@ export const AgentTest = () => {
           </motion.div>
         ))}
       </AnimatePresence>
-      {!isLensAuthenticated && determineIntent(query) === 'post_to_lens' && (
+      {determineIntent(query) === 'post_to_lens' && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
