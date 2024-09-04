@@ -16,9 +16,8 @@ import { PulsatingOrb } from './PulsatingOrb';
 import { AnimatedEllipsis } from './AnimatedEllipsis';
 import { MessageBubble } from './MessageBubble';
 import { MetadataInputs } from './MetadataInputs';
-import { useLogin, useCreatePost, useSession } from '@lens-protocol/react-web';
+import { useLogin, useCreatePost, useSession, SessionType } from '@lens-protocol/react-web';
 import { LensAuth } from './LensAuth';
-import { SessionType } from "@lens-protocol/react-web";
 import { v4 as uuidv4 } from 'uuid';
 import { LensPostSummary } from './LensPostSummary';
 
@@ -41,7 +40,9 @@ export const AgentTest = () => {
     attributes: ['']
   });
   const { data: session } = useSession();
+  console.log(session)
   const isLensAuthenticated = session?.type === SessionType.WithProfile;
+  console.log(isLensAuthenticated)
   const { execute: createPost, error: createPostError, loading: isCreatingPost } = useCreatePost();
 
   useEffect(() => {
@@ -240,6 +241,7 @@ export const AgentTest = () => {
     }
   
     try {
+      addMessage('assistant', <LensAuth />);
       const tx = await onboardAgentContract.handleIntent("post_to_lens", query);
       const explorerUrl = `https://explorer.galadriel.com/tx/${tx.hash}`;
       addMessage('assistant', `Transaction sent. [View on Explorer](${explorerUrl})`);
@@ -467,6 +469,7 @@ export const AgentTest = () => {
   return (
     <div className="flex flex-col h-full">
       <main className="flex-grow overflow-auto p-4 pt-20 bg-background text-foreground transition-colors duration-500">
+      
       <AnimatePresence>
         {agentRun?.messages.map((message, index) => (
           <motion.div
