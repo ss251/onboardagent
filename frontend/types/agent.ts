@@ -2,8 +2,14 @@ import { ReactNode } from 'react';
 
 export interface Message {
   role: 'assistant' | 'user';
-  content: string | ReactNode;
+  content: string | ReactNode | NetworkSelectionContent;
   type: string;
+}
+
+export interface NetworkSelectionContent {
+  type: 'network-selection';
+  content: string;
+  options: Array<{ id: number; name: string }>;
 }
 
 export interface AgentRun {

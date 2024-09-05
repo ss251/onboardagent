@@ -12,20 +12,26 @@ export const determineContentType = (content: string): 'text' | 'image' | 'json'
 };
 
 export const determineIntent = (query: string): string => {
-  if (query.includes("display wallet info")) {
+  const lowercaseQuery = query.toLowerCase();
+
+  if (lowercaseQuery.includes("display wallet info")) {
     return "display_wallet_info";
-  } else if (query.includes("token swap")) {
+  } else if (lowercaseQuery.includes("token swap")) {
     return "token_swap";
-  } else if (query.includes("bridge tokens")) {
+  } else if (lowercaseQuery.includes("bridge tokens")) {
     return "bridge_tokens";
-  } else if (query.includes("send tokens")) {
+  } else if (lowercaseQuery.includes("send tokens")) {
     return "send_tokens";
-  } else if (query.includes("cast to farcaster")) {
+  } else if (lowercaseQuery.includes("cast to farcaster")) {
     return "cast_to_farcaster";
-  } else if (query.includes("generate nft")) {
+  } else if (lowercaseQuery.includes("generate nft")) {
     return "generate_nft";
-  } else if (query.includes("post to lens")) {
+  } else if (lowercaseQuery.includes("post to lens")) {
     return "post_to_lens";
+  } else if (lowercaseQuery.includes("create zora nft") || 
+             lowercaseQuery.includes("mint zora nft") || 
+             lowercaseQuery.includes("zora nft creation")) {
+    return "create_zora_nft";
   } else {
     return "unknown";
   }

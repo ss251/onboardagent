@@ -9,7 +9,7 @@ import { Send } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Message, AgentRun, Metadata } from '../types/agent';
+import { Message, AgentRun, Metadata, NetworkSelectionContent } from '../types/agent';
 import { ONBOARD_AGENT_CONTRACT_ADDRESS, DALLE_NFT_CONTRACT_ADDRESS } from '../constants/contracts';
 import { determineContentType, determineIntent, getAgentRunId, getMintInputId, generateWarpcastIntentUrl, pollTokenUri } from '../utils/agentUtils';
 import { PulsatingOrb } from './PulsatingOrb';
@@ -20,15 +20,16 @@ import { useLogin, useCreatePost, useSession, SessionType } from '@lens-protocol
 import { LensAuth } from './LensAuth';
 import { v4 as uuidv4 } from 'uuid';
 import { LensPostSummary } from './LensPostSummary';
+import { FarcasterLogo, LensLogo, WarpcastLogo } from './logos'
 
 export const AgentTest = () => {
   const { walletProvider } = useWeb3ModalProvider();
   const { address, isConnected } = useWeb3ModalAccount();
+  const [isWaitingResponse, setIsWaitingResponse] = useState<boolean>(false);
 
   const [onboardAgentContract, setOnboardAgentContract] = useState<Contract | null>(null);
   const [dalleNftContract, setDalleNftContract] = useState<Contract | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [isWaitingResponse, setIsWaitingResponse] = useState<boolean>(false);
   const [agentRun, setAgentRun] = useState<AgentRun | undefined>();
   const [query, setQuery] = useState<string>('');
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -44,6 +45,7 @@ export const AgentTest = () => {
   const isLensAuthenticated = session?.type === SessionType.WithProfile;
   console.log(isLensAuthenticated)
   const { execute: createPost, error: createPostError, loading: isCreatingPost } = useCreatePost();
+  const [inputIntent, setInputIntent] = useState<string | null>(null);
 
   useEffect(() => {
     initializeContracts();
@@ -342,7 +344,7 @@ export const AgentTest = () => {
   };
 
   // Helper function to add messages to the chat
-  const addMessage = (role: 'assistant' | 'user', content: string | React.ReactNode) => {
+  const addMessage = (role: 'assistant' | 'user', content: string | React.ReactNode | NetworkSelectionContent) => {
     setAgentRun(prev => {
       if (!prev) return undefined;
       return {
@@ -364,7 +366,15 @@ export const AgentTest = () => {
         ...prev,
         messages: [
           ...prev.messages,
-          { role: 'assistant', content: `Click [here](${warpcastUrl}) to view the NFT on Farcaster`, type: 'text' }
+          { 
+            role: 'assistant', 
+            content: (
+              <span>
+                View on Warpcast <WarpcastLogo className="inline w-4 h-4" />: <a href={warpcastUrl} target="_blank" rel="noopener noreferrer">Click here</a>
+              </span>
+            ), 
+            type: 'text' 
+          }
         ],
       };
     });
@@ -456,6 +466,17 @@ export const AgentTest = () => {
       setIsWaitingResponse(false);
     }
   };
+  
+  const renderIntentLogo = () => {
+    switch (inputIntent) {
+      case 'cast_to_farcaster':
+        return <FarcasterLogo className="w-5 h-5" />;
+      case 'post_to_lens':
+        return <LensLogo className="w-5 h-5" />;
+      default:
+        return null;
+    }
+  };
 
   const handleMetadataChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -469,7 +490,7 @@ export const AgentTest = () => {
   return (
     <div className="flex flex-col h-full">
       <main className="flex-grow overflow-auto p-4 pt-20 bg-background text-foreground transition-colors duration-500">
-      
+        
       <AnimatePresence>
         {agentRun?.messages.map((message, index) => (
           <motion.div
@@ -520,22 +541,33 @@ export const AgentTest = () => {
         <div ref={chatEndRef} />
       </main>
       <footer className="p-4 bg-background">
-        <div className="flex items-center space-x-2">
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Type your message..."
-            onKeyPress={(e) => e.key === 'Enter' && handleSubmit(e)}
-            className="flex-grow"
-          />
-          {determineIntent(query) === 'generate_nft' && (
+      <div className="flex items-center space-x-2">
+      <div className="relative flex-grow">
+      <Input
+        value={query}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          const intent = determineIntent(e.target.value);
+          setInputIntent(intent !== 'unknown' ? intent : null);
+        }}
+        placeholder="Type your message..."
+        onKeyPress={(e) => e.key === 'Enter' && handleSubmit(e)}
+        className={`flex-grow ${inputIntent ? 'pl-10' : ''}`}
+      />
+        {determineIntent(query) === 'generate_nft' && (
             <MetadataInputs metadata={metadata} handleMetadataChange={handleMetadataChange} />
-          )}
-          <Button onClick={handleSubmit} disabled={isLoading || isWaitingResponse}>
-            <Send className="h-5 w-5" />
-          </Button>
-        </div>
-      </footer>
+        )}
+        {inputIntent && (
+          <div className="absolute left-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
+            {renderIntentLogo()}
+          </div>
+        )}
+      </div>
+        <Button onClick={handleSubmit} disabled={isLoading || isWaitingResponse}>
+          <Send className="h-5 w-5" />
+        </Button>
+      </div>
+    </footer>
     </div>
   );
 };

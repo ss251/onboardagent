@@ -1,5 +1,5 @@
 import React from 'react';
-import { Message } from '../types/agent';
+import { Message, NetworkSelectionContent } from '../types/agent';
 import Image from 'next/image';
 import JsonDisplay from './JsonDisplay';
 import ReactMarkdown from 'react-markdown';
@@ -25,6 +25,31 @@ export const MessageBubble = ({ message }: { message: Message | React.ReactEleme
       );
     case 'json':
       return <JsonDisplay jsonString={String(typedMessage.content)} />;
+    case 'network-selection':
+      if (typeof typedMessage.content === 'object' && typedMessage.content !== null && 'type' in typedMessage.content) {
+        const networkContent = typedMessage.content as NetworkSelectionContent;
+        return (
+          <div>
+            <p>{networkContent.content}</p>
+            <div className="flex flex-wrap gap-2 mt-2">
+              {networkContent.options.map((option) => (
+                <button
+                  key={option.id}
+                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+                  onClick={() => {
+                    window.dispatchEvent(new CustomEvent('network-selected', { detail: option.id }));
+                  }}
+                >
+                  {option.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      } else {
+        console.error('Invalid network-selection content:', typedMessage.content);
+        return <div>Error: Invalid network selection content</div>;
+      }
     default:
       return (
         <div className="markdown-content">

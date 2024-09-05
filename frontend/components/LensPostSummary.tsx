@@ -1,4 +1,5 @@
 import React from 'react';
+import { HeyLogo } from './logos';
 
 interface LensPostSummaryProps {
   post: any; // You might want to create a proper type for this
@@ -24,7 +25,10 @@ export const LensPostSummary: React.FC<LensPostSummaryProps> = ({ post }) => {
         <strong className="text-primary">Hashtags:</strong> {post.value.hashtagsMentioned?.map((tag: string) => `#${tag}`).join(', ')}
       </p>
       <p className="mb-2">
-        <strong className="text-primary">View post:</strong> <a href={postUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Click here</a>
+        <strong className="text-primary">View post on Hey:</strong> 
+        <a href={postUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline inline-flex items-center">
+          Click here <HeyLogo className="inline w-4 h-4 ml-1" />
+        </a>
       </p>
       <div className="mt-4">
       </div>
