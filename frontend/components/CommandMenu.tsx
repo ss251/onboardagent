@@ -83,7 +83,7 @@ export const CommandMenu: React.FC<CommandMenuProps> = ({ isOpen, onSelect, onCl
     return (
       <div
         ref={menuRef}
-        className="command-menu absolute bottom-full left-0 w-full max-h-[300px] overflow-y-auto mb-2 z-50"
+        className="command-menu absolute bottom-full left-0 w-full max-h-[500px] overflow-y-auto mb-2 z-50"
       >
         {filteredCommands.map((command, index) => (
           <div
@@ -96,7 +96,7 @@ export const CommandMenu: React.FC<CommandMenuProps> = ({ isOpen, onSelect, onCl
             <div className="flex-shrink-0 mr-3">{command.icon}</div>
             <div className="flex-grow">
               <div className="font-semibold">{command.name}</div>
-              <div className="text-sm opacity-70">{command.description}</div>
+              <div className="text-sm">{command.description}</div>
             </div>
           </div>
         ))}
