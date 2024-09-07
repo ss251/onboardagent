@@ -29,7 +29,8 @@ export interface Metadata {
 const AVAILABLE_COMMANDS = [
   "/cast_to_farcaster",
   "/post_to_lens",
-  "/generate_nft"
+  "/generate_nft",
+  "/tweet_to_x"
 ] as const;
 
 export type CommandType = typeof AVAILABLE_COMMANDS[number];

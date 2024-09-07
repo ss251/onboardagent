@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input'
 import { CommandMenu } from './CommandMenu';
 import { Message, AgentRun, Metadata, NetworkSelectionContent, Command } from '../types/agent';
 import { ONBOARD_AGENT_CONTRACT_ADDRESS, DALLE_NFT_CONTRACT_ADDRESS } from '../constants/contracts';
-import { determineContentType, determineIntent, getAgentRunId, getMintInputId, generateWarpcastIntentUrl, pollTokenUri } from '../utils/agentUtils';
+import { determineContentType, determineIntent, getAgentRunId, getMintInputId, generateWarpcastIntentUrl, generateTwitterIntentUrl, pollTokenUri } from '../utils/agentUtils';
 import { PulsatingOrb } from './PulsatingOrb';
 import { AnimatedEllipsis } from './AnimatedEllipsis';
 import { MessageBubble } from './MessageBubble';
@@ -21,7 +21,7 @@ import { useLogin, useCreatePost, useSession, SessionType } from '@lens-protocol
 import { LensAuth } from './LensAuth';
 import { v4 as uuidv4 } from 'uuid';
 import { LensPostSummary } from './LensPostSummary';
-import { FarcasterLogo, LensLogo, WarpcastLogo } from './logos'
+import { FarcasterLogo, LensLogo, WarpcastLogo, TwitterLogo } from './logos'
 
 interface ContentItem {
   value: string;
@@ -161,6 +161,8 @@ export const AgentTest = () => {
         await handleGenerateNftIntent(query, metadata);
       } else if (intent === 'post_to_lens') {
         await handleLensIntent(query);
+      } else if (intent === 'tweet_to_x') {
+        await handleTwitterIntent(query);
       } else {
         const tx = await onboardAgentContract.handleIntent(intent, query);
         console.log("Transaction sent:", tx.hash);
@@ -451,9 +453,15 @@ export const AgentTest = () => {
         messages: [...prev.messages, ...newMessages],
       };
     });
-    if (messages.length > 0 && messages[messages.length - 1].role === 'assistant' && (selectedCommand?.name.slice(1) === 'cast_to_farcaster' || determineIntent(query) === 'cast_to_farcaster')) {
+  
+      if (messages.length > 0 && messages[messages.length - 1].role === 'assistant') {
+    const lastMessage = messages[messages.length - 1];
+    if (selectedCommand?.name.slice(1) === 'cast_to_farcaster' || determineIntent(query) === 'cast_to_farcaster') {
       await prepareFarcasterContent(messages);
+    } else if (selectedCommand?.name.slice(1) === 'tweet_to_x' || determineIntent(query) === 'tweet_to_x') {
+      await prepareTwitterContent(messages);
     }
+  }
     setIsWaitingResponse(false);
   };
 
@@ -502,6 +510,61 @@ export const AgentTest = () => {
     } finally {
       setIsPreparingFarcaster(false);
       setIsWaitingResponse(false);
+    }
+  };
+
+  const prepareTwitterContent = async (messages: Message[]) => {
+    try {
+      let tweetContent = '';
+      for (const message of messages.reverse()) {
+        if (message.role === 'assistant' && typeof message.content === 'string') {
+          const match = message.content.match(/Tweet content:\s*([\s\S]*)/);
+          if (match) {
+            tweetContent = match[1].trim();
+            // Remove quotes at the beginning and end if they exist
+            tweetContent = tweetContent.replace(/^["']|["']$/g, '');
+            break;
+          }
+        }
+      }
+  
+      if (!tweetContent) {
+        console.error("No tweet content found in messages");
+        addMessage('assistant', 'Error preparing Twitter content. Please try again.');
+        return;
+      }
+  
+      const twitterUrl = generateTwitterIntentUrl(tweetContent);
+      addMessage('assistant', (
+        <span>
+          Tweet on Twitter <TwitterLogo className="inline w-4 h-4" />: <a href={twitterUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline inline-flex items-center">Click here</a>
+        </span>
+      ));
+    } catch (error) {
+      console.error("Error preparing Twitter content:", error);
+      addMessage('assistant', 'Error preparing Twitter content. Please try again.');
+    }
+  };
+
+  const handleTwitterIntent = async (query: string) => {
+    if (!isConnected || !onboardAgentContract || !query.trim()) {
+      return;
+    }
+    try {
+      console.log("Handling Twitter intent with query:", query);
+      const tx = await onboardAgentContract.handleIntent("tweet_to_x", query);
+      console.log("Transaction sent:", tx.hash);
+      const receipt = await tx.wait();
+      console.log("Transaction receipt:", receipt);
+      const newRunId = getAgentRunId(receipt, onboardAgentContract);
+      console.log("New run ID:", newRunId);
+      if (newRunId !== null) {
+        await waitForAgentRunToFinish(newRunId);
+      } else {
+        throw new Error("Failed to get new run ID");
+      }
+    } catch (error) {
+      console.error("Error handling Twitter intent:", error);
     }
   };
   

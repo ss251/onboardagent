@@ -23,3 +23,7 @@ export const HeyLogo: React.FC<LogoProps> = ({ className }) => (
 export const WarpcastLogo: React.FC<LogoProps> = ({ className }) => (
   <Image src="/logos/warpcast-logo.webp" alt="Warpcast Logo" width={24} height={24} className={className} />
 );
+
+export const TwitterLogo: React.FC<LogoProps> = ({ className }) => (
+  <Image src="/logos/twitter-logo.avif" alt="X Logo" width={24} height={24} className={className} />
+);

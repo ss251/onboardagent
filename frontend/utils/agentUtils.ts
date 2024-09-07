@@ -20,9 +20,17 @@ export const determineIntent = (query: string): string => {
     return "post_to_lens";
   } else if (lowercaseQuery.startsWith('/generate_nft')) {
     return "generate_nft";
+  } else if (lowercaseQuery.startsWith('/tweet_to_x')) {
+    return "tweet_to_x";
   } else {
     return "unknown";
   }
+};
+
+export const generateTwitterIntentUrl = (text: string) => {
+  const params = new URLSearchParams();
+  params.append('text', text);
+  return `https://twitter.com/intent/tweet?${params.toString()}`;
 };
 
 export const getAgentRunId = (receipt: TransactionReceipt, contract: Contract): number | null => {

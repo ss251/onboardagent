@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Command } from '@/types/agent';
-import { FarcasterLogo, LensLogo } from './logos';
+import { FarcasterLogo, LensLogo, TwitterLogo } from './logos';
 import { Paintbrush } from 'lucide-react';
 
 const COMMANDS: Command[] = [
@@ -18,6 +18,11 @@ const COMMANDS: Command[] = [
     name: '/generate_nft',
     description: 'Generate a new NFT',
     icon: <Paintbrush className="w-5 h-5" />,
+  },
+  {
+    name: '/tweet_to_x',
+    description: 'Tweet to X',
+    icon: <TwitterLogo className="w-5 h-5" />,
   },
 ];
 
