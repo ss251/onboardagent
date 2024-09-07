@@ -30,7 +30,8 @@ const AVAILABLE_COMMANDS = [
   "/cast_to_farcaster",
   "/post_to_lens",
   "/generate_nft",
-  "/tweet_to_x"
+  "/tweet_to_x",
+  "/view_wallet_info"
 ] as const;
 
 export type CommandType = typeof AVAILABLE_COMMANDS[number];

@@ -22,6 +22,7 @@ import { LensAuth } from './LensAuth';
 import { v4 as uuidv4 } from 'uuid';
 import { LensPostSummary } from './LensPostSummary';
 import { FarcasterLogo, LensLogo, WarpcastLogo, TwitterLogo } from './logos'
+import { ChainSelectionModal } from "./ChainSelectionModal";
 
 interface ContentItem {
   value: string;
@@ -30,6 +31,10 @@ interface ContentItem {
 interface AssistantMessage {
   role: string;
   content: ContentItem[] | string;
+}
+interface ChainOption {
+  chainId: number;
+  chainName: string;
 }
 
 export const AgentTest = () => {
@@ -59,6 +64,9 @@ export const AgentTest = () => {
   const [isCommandMenuOpen, setIsCommandMenuOpen] = useState(false);
   const [selectedCommand, setSelectedCommand] = useState<Command | null>(null);
   const [commandPrefix, setCommandPrefix] = useState('');
+  const [chains, setChains] = useState<ChainOption[]>([]);
+  const [selectedChains, setSelectedChains] = useState<number[]>([]);
+  const [isChainModalOpen, setIsChainModalOpen] = useState(false);
 
   useEffect(() => {
     initializeContracts();
@@ -81,14 +89,22 @@ export const AgentTest = () => {
     }
   };
 
-  const connectWallet = async () => {
-    if (walletProvider) {
-      try {
-        await walletProvider.request({ method: 'eth_requestAccounts' });
-      } catch (error) {
-        console.error("Failed to connect wallet:", error);
-      }
+  useEffect(() => {
+    fetchChains();
+  }, []);
+  
+  const fetchChains = async () => {
+    try {
+      const response = await fetch('/api/getChains');
+      const data = await response.json();
+      setChains(data);
+    } catch (error) {
+      console.error('Error fetching chains:', error);
     }
+  };
+  
+  const handleChainSelection = (newSelectedChains: number[]) => {
+    setSelectedChains(newSelectedChains);
   };
 
   const getAgentRun = async (newRunId: number) => {
@@ -141,6 +157,10 @@ export const AgentTest = () => {
     if (!isConnected || !onboardAgentContract || !query.trim()) {
       return;
     }
+
+    if (!onboardAgentContract || !query.trim()) {
+      return;
+    }
   
     const userMessage: Message = { role: 'user', content: query, type: 'text' };
     setAgentRun(prev => ({
@@ -154,7 +174,7 @@ export const AgentTest = () => {
   
     try {
       let intent = selectedCommand ? selectedCommand.name.slice(1) : determineIntent(query);
-
+  
       if (intent === 'cast_to_farcaster') {
         await handleFarcasterIntent(query);
       } else if (intent === 'generate_nft') {
@@ -171,7 +191,7 @@ export const AgentTest = () => {
         const newRunId = getAgentRunId(receipt, onboardAgentContract);
         console.log("New run ID:", newRunId);
         if (newRunId !== null) {
-          getAgentRun(newRunId);
+          await getAgentRun(newRunId);
         } else {
           throw new Error("Failed to get new run ID");
         }
@@ -628,12 +648,73 @@ export const AgentTest = () => {
     setCommandPrefix(command.name + ' ');
     setQuery('');
     setIsCommandMenuOpen(false);
+  
+    if (command.name === '/view_wallet_info') {
+      setIsChainModalOpen(true);
+    }
+  };
+
+  const handleViewWalletInfo = async (chains: number[]) => {
+    if (!address) {
+      console.error('No wallet address available');
+      return;
+    }
+
+    setIsLoading(true);
+    setIsChainModalOpen(false);
+
+    console.log("Selected chains before API call:", chains);
+
+    // Filter out any empty strings and join the chainIds
+    const chainParams = chains.filter(Boolean).join(',');
+    
+    console.log("Chain parameters:", chainParams);
+
+    // Construct the URL with proper encoding
+    const url = `/api/fetchWalletInfo?address=${encodeURIComponent(address)}&chains=${encodeURIComponent(chainParams)}`;
+    console.log("Fetching from URL:", url);
+
+    try {
+      const response = await fetch(url);
+      const data = await response.json();
+      
+      setAgentRun(prev => ({
+        id: prev?.id || 0,
+        owner: prev?.owner || address || "",
+        messages: [
+          ...(prev?.messages || []),
+          {
+            role: 'assistant',
+            content: JSON.stringify(data, null, 2),
+            type: 'json'
+          }
+        ],
+        isFinished: true
+      }));
+    } catch (error) {
+      console.error('Error fetching wallet info:', error);
+      setAgentRun(prev => ({
+        id: prev?.id || 0,
+        owner: prev?.owner || address || "",
+        messages: [
+          ...(prev?.messages || []),
+          {
+            role: 'assistant',
+            content: 'Failed to fetch wallet information.',
+            type: 'text'
+          }
+        ],
+        isFinished: true
+      }));
+    }
+    setIsLoading(false);
+    setSelectedCommand(null);
   };
 
   return (
     <div className="flex flex-col h-full">
       <main className="flex-grow overflow-auto p-4 pt-12 bg-background text-foreground transition-colors duration-500">
-
+      
         
       <AnimatePresence>
         {agentRun?.messages.map((message, index) => (
@@ -696,7 +777,7 @@ export const AgentTest = () => {
                   </span>
                 </div>
               )}
-             <Input
+            <Input
               value={query}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
@@ -727,6 +808,14 @@ export const AgentTest = () => {
           <MetadataInputs metadata={metadata} handleMetadataChange={handleMetadataChange} />
         )}
       </footer>
+      <ChainSelectionModal
+        isOpen={isChainModalOpen}
+        onClose={() => setIsChainModalOpen(false)}
+        chains={chains}
+        selectedChains={selectedChains}
+        onChainSelect={handleChainSelection}
+        onSave={handleViewWalletInfo}
+      />
     </div>
   );
 };

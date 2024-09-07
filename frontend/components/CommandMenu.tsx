@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Command } from '@/types/agent';
 import { FarcasterLogo, LensLogo, TwitterLogo } from './logos';
-import { Paintbrush } from 'lucide-react';
+import { Paintbrush, WalletCards } from 'lucide-react';
 
 const COMMANDS: Command[] = [
   {
@@ -23,6 +23,11 @@ const COMMANDS: Command[] = [
     name: '/tweet_to_x',
     description: 'Tweet to X',
     icon: <TwitterLogo className="w-5 h-5" />,
+  },
+  {
+    name: '/view_wallet_info',
+    description: 'View your wallet information',
+    icon: <WalletCards className="h-4 w-4" />,
   },
 ];
 
@@ -78,7 +83,7 @@ export const CommandMenu: React.FC<CommandMenuProps> = ({ isOpen, onSelect, onCl
     return (
       <div
         ref={menuRef}
-        className="command-menu absolute bottom-full left-0 w-full max-h-64 overflow-y-auto mb-2 z-50"
+        className="command-menu absolute bottom-full left-0 w-full max-h-[300px] overflow-y-auto mb-2 z-50"
       >
         {filteredCommands.map((command, index) => (
           <div

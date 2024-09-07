@@ -22,6 +22,8 @@ export const determineIntent = (query: string): string => {
     return "generate_nft";
   } else if (lowercaseQuery.startsWith('/tweet_to_x')) {
     return "tweet_to_x";
+  } else if (lowercaseQuery.startsWith('/view_wallet_info')) {
+    return "view_wallet_info";
   } else {
     return "unknown";
   }
