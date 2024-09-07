@@ -154,7 +154,7 @@ export const AgentTest = () => {
   
     try {
       let intent = selectedCommand ? selectedCommand.name.slice(1) : determineIntent(query);
-      
+
       if (intent === 'cast_to_farcaster') {
         await handleFarcasterIntent(query);
       } else if (intent === 'generate_nft') {
@@ -638,7 +638,7 @@ export const AgentTest = () => {
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
               onKeyPress={handleKeyPress}
-              placeholder={selectedCommand ? "Enter your prompt..." : "Type / to use a command..."}
+              placeholder={selectedCommand ? "Enter your prompt..." : "Enter your prompt or type / to use a command..."}
               className={`flex-grow ${
                 selectedCommand 
                   ? `pl-[${selectedCommand.name.length * 8 + 48}px]` 
