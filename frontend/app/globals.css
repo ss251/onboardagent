@@ -59,7 +59,7 @@
 
 /* Dark mode specific styles */
 .dark .command-menu {
-  @apply bg-inherit text-gray-200 border-black;
+  @apply bg-[#121212] text-gray-200 border-black;
 }
 
 .dark .command-item {
