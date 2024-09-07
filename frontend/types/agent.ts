@@ -25,3 +25,17 @@ export interface Metadata {
   externalUrl: string;
   attributes: string[];
 }
+
+const AVAILABLE_COMMANDS = [
+  "/cast_to_farcaster",
+  "/post_to_lens",
+  "/generate_nft"
+] as const;
+
+export type CommandType = typeof AVAILABLE_COMMANDS[number];
+
+export interface Command {
+  name: CommandType;
+  description: string;
+  icon: ReactNode;
+}

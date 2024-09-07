@@ -43,3 +43,42 @@
   .assistant-message {
     @apply bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-bl-none;
   }
+
+/* Command menu styles */
+.command-menu {
+  @apply bg-discord-dark text-discord-text border border-discord-light rounded-md shadow-lg;
+}
+
+.command-item {
+  @apply px-4 py-2 hover:bg-discord-hover hover:text-white cursor-pointer transition-colors duration-150;
+}
+
+.command-item-selected {
+  @apply bg-discord-selected text-white;
+}
+
+/* Dark mode specific styles */
+.dark .command-menu {
+  @apply bg-gray-800 text-gray-200 border-gray-700;
+}
+
+.dark .command-item {
+  @apply hover:bg-gray-700;
+}
+
+.dark .command-item-selected {
+  @apply bg-gray-700 text-white;
+}
+
+/* Light mode specific styles */
+.light .command-menu {
+  @apply bg-white text-gray-800 border-gray-300;
+}
+
+.light .command-item {
+  @apply hover:bg-gray-100 hover:text-gray-800;
+}
+
+.light .command-item-selected {
+  @apply bg-gray-100 text-gray-800;
+}

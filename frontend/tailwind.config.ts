@@ -18,6 +18,13 @@ const config = {
       },
     },
     extend: {
+      colors: {
+        'discord-dark': '#36393f',
+        'discord-light': '#40444b',
+        'discord-hover': '#32353b',
+        'discord-selected': '#393c43',
+        'discord-text': '#dcddde',
+      },
       keyframes: {
         "accordion-down": {
           from: { height: "0" },
@@ -35,6 +42,12 @@ const config = {
     },
   },
   plugins: [require("tailwindcss-animate")],
+  safelist: [
+    'hover:bg-discord-hover',
+    'hover:text-white',
+    'bg-discord-selected',
+    'text-white',
+  ],
 } satisfies Config
 
 export default config

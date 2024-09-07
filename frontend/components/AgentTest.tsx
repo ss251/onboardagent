@@ -9,7 +9,8 @@ import { Send } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Message, AgentRun, Metadata, NetworkSelectionContent } from '../types/agent';
+import { CommandMenu } from './CommandMenu';
+import { Message, AgentRun, Metadata, NetworkSelectionContent, Command } from '../types/agent';
 import { ONBOARD_AGENT_CONTRACT_ADDRESS, DALLE_NFT_CONTRACT_ADDRESS } from '../constants/contracts';
 import { determineContentType, determineIntent, getAgentRunId, getMintInputId, generateWarpcastIntentUrl, pollTokenUri } from '../utils/agentUtils';
 import { PulsatingOrb } from './PulsatingOrb';
@@ -21,6 +22,15 @@ import { LensAuth } from './LensAuth';
 import { v4 as uuidv4 } from 'uuid';
 import { LensPostSummary } from './LensPostSummary';
 import { FarcasterLogo, LensLogo, WarpcastLogo } from './logos'
+
+interface ContentItem {
+  value: string;
+}
+
+interface AssistantMessage {
+  role: string;
+  content: ContentItem[] | string;
+}
 
 export const AgentTest = () => {
   const { walletProvider } = useWeb3ModalProvider();
@@ -46,6 +56,9 @@ export const AgentTest = () => {
   console.log(isLensAuthenticated)
   const { execute: createPost, error: createPostError, loading: isCreatingPost } = useCreatePost();
   const [inputIntent, setInputIntent] = useState<string | null>(null);
+  const [isCommandMenuOpen, setIsCommandMenuOpen] = useState(false);
+  const [selectedCommand, setSelectedCommand] = useState<Command | null>(null);
+  const [commandPrefix, setCommandPrefix] = useState('');
 
   useEffect(() => {
     initializeContracts();
@@ -128,8 +141,8 @@ export const AgentTest = () => {
     if (!isConnected || !onboardAgentContract || !query.trim()) {
       return;
     }
-
-  const userMessage: Message = { role: 'user', content: query, type: 'text' };
+  
+    const userMessage: Message = { role: 'user', content: query, type: 'text' };
     setAgentRun(prev => ({
       id: prev?.id || 0,
       owner: prev?.owner || address || "",
@@ -138,9 +151,10 @@ export const AgentTest = () => {
     }));
     setQuery('');
     setIsWaitingResponse(true);
-
+  
     try {
-      const intent = determineIntent(query);
+      let intent = selectedCommand ? selectedCommand.name.slice(1) : determineIntent(query);
+      
       if (intent === 'cast_to_farcaster') {
         await handleFarcasterIntent(query);
       } else if (intent === 'generate_nft') {
@@ -167,6 +181,7 @@ export const AgentTest = () => {
       }
       setIsWaitingResponse(false);
     }
+
   };
 
   const handleFarcasterIntent = async (query: string) => {
@@ -243,7 +258,6 @@ export const AgentTest = () => {
     }
   
     try {
-      addMessage('assistant', <LensAuth />);
       const tx = await onboardAgentContract.handleIntent("post_to_lens", query);
       const explorerUrl = `https://explorer.galadriel.com/tx/${tx.hash}`;
       addMessage('assistant', `Transaction sent. [View on Explorer](${explorerUrl})`);
@@ -252,9 +266,33 @@ export const AgentTest = () => {
       if (newRunId !== null) {
         await waitForAgentRunToFinish(newRunId);
         const messages = await onboardAgentContract.getMessageHistory(newRunId);
-        const assistantMessage = messages.find((msg: any) => msg.role === 'assistant');
-        if (assistantMessage) {
-          await postToLens(assistantMessage.content[0].value);
+        const assistantMessages = messages.filter((msg: AssistantMessage) => msg.role === 'assistant');
+        
+        if (assistantMessages.length > 0) {
+          let lensContent = '';
+          for (const msg of assistantMessages) {
+            const content = Array.isArray(msg.content) 
+              ? msg.content.map((item: ContentItem) => item.value).join('\n') 
+              : msg.content;
+            const match = content.match(/Lens content:\s*([\s\S]*)/i);
+            if (match) {
+              lensContent = match[1].trim();
+              break;
+            }
+          }
+  
+          if (lensContent) {
+            await postToLens(lensContent);
+          } else {
+            // If no specific Lens content is found, use all assistant messages
+            const fullContent = assistantMessages
+              .map((msg: AssistantMessage) => Array.isArray(msg.content) 
+                ? msg.content.map((item: ContentItem) => item.value).join('\n') 
+                : msg.content)
+              .join('\n')
+              .replace(/Lens content:\s*/gi, ''); // Remove any "Lens content:" prefixes
+            await postToLens(fullContent);
+          }
         } else {
           addMessage('assistant', 'Error: No content generated for Lens post.');
         }
@@ -370,7 +408,7 @@ export const AgentTest = () => {
             role: 'assistant', 
             content: (
               <span>
-                View on Warpcast <WarpcastLogo className="inline w-4 h-4" />: <a href={warpcastUrl} target="_blank" rel="noopener noreferrer">Click here</a>
+                View on Warpcast <WarpcastLogo className="inline w-4 h-4" />: <a href={warpcastUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline inline-flex items-center">Click here</a>
               </span>
             ), 
             type: 'text' 
@@ -413,7 +451,7 @@ export const AgentTest = () => {
         messages: [...prev.messages, ...newMessages],
       };
     });
-    if (messages.length > 0 && messages[messages.length - 1].role === 'assistant' && (determineIntent(query) === "cast_to_farcaster")) {
+    if (messages.length > 0 && messages[messages.length - 1].role === 'assistant' && (selectedCommand?.name.slice(1) === 'cast_to_farcaster' || determineIntent(query) === 'cast_to_farcaster')) {
       await prepareFarcasterContent(messages);
     }
     setIsWaitingResponse(false);
@@ -487,9 +525,52 @@ export const AgentTest = () => {
     }
   };
 
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setQuery(value);
+    
+    if (value.startsWith('/')) {
+      setIsCommandMenuOpen(true);
+      setCommandPrefix('');
+    } else if (selectedCommand) {
+      setIsCommandMenuOpen(false);
+      if (!value.startsWith(selectedCommand.name)) {
+        setCommandPrefix(selectedCommand.name + ' ');
+      }
+    } else {
+      setIsCommandMenuOpen(false);
+    }
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit(e);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace' && selectedCommand) {
+      if (query === '') {
+        e.preventDefault();
+        setQuery('');
+        setSelectedCommand(null);
+        setIsCommandMenuOpen(true);
+      }
+    }
+  };
+
+  const handleCommandSelect = (command: Command) => {
+    setSelectedCommand(command);
+    setCommandPrefix(command.name + ' ');
+    setQuery('');
+    setIsCommandMenuOpen(false);
+  };
+
   return (
     <div className="flex flex-col h-full">
-      <main className="flex-grow overflow-auto p-4 pt-20 bg-background text-foreground transition-colors duration-500">
+      <main className="flex-grow overflow-auto p-4 pt-12 bg-background text-foreground transition-colors duration-500">
+
         
       <AnimatePresence>
         {agentRun?.messages.map((message, index) => (
@@ -507,7 +588,7 @@ export const AgentTest = () => {
           </motion.div>
         ))}
       </AnimatePresence>
-      {determineIntent(query) === 'post_to_lens' && (
+      {(selectedCommand?.name.slice(1) === 'post_to_lens' || determineIntent(query) === 'post_to_lens') && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -541,33 +622,48 @@ export const AgentTest = () => {
         <div ref={chatEndRef} />
       </main>
       <footer className="p-4 bg-background">
-      <div className="flex items-center space-x-2">
-      <div className="relative flex-grow">
-      <Input
-        value={query}
-        onChange={(e) => {
-          setQuery(e.target.value);
-          const intent = determineIntent(e.target.value);
-          setInputIntent(intent !== 'unknown' ? intent : null);
-        }}
-        placeholder="Type your message..."
-        onKeyPress={(e) => e.key === 'Enter' && handleSubmit(e)}
-        className={`flex-grow ${inputIntent ? 'pl-10' : ''}`}
-      />
-        {determineIntent(query) === 'generate_nft' && (
-            <MetadataInputs metadata={metadata} handleMetadataChange={handleMetadataChange} />
-        )}
-        {inputIntent && (
-          <div className="absolute left-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
-            {renderIntentLogo()}
+        <div className="flex items-center space-x-2">
+          <div className="relative flex-grow">
+            <div className="relative flex items-center w-full">
+              {selectedCommand && (
+                <div className="absolute left-0 top-0 bottom-0 flex items-center bg-gray-100 dark:bg-gray-700 rounded-l-md px-3 border-r border-gray-300 dark:border-gray-600 z-10">
+                  <span className="flex items-center space-x-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {selectedCommand.icon}
+                    <span>{selectedCommand.name}</span>
+                  </span>
+                </div>
+              )}
+             <Input
+              value={query}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              onKeyPress={handleKeyPress}
+              placeholder={selectedCommand ? "Enter your prompt..." : "Type / to use a command..."}
+              className={`flex-grow ${
+                selectedCommand 
+                  ? `pl-[${selectedCommand.name.length * 8 + 48}px]` 
+                  : ''
+              }`}
+              style={{
+                paddingLeft: selectedCommand ? `${selectedCommand.name.length * 8 + 48}px` : '',
+              }}
+            />
+            </div>
+            <CommandMenu
+              isOpen={isCommandMenuOpen && query.startsWith('/')}
+              onSelect={handleCommandSelect}
+              onClose={() => setIsCommandMenuOpen(false)}
+              inputValue={query}
+            />
           </div>
+          <Button onClick={handleSubmit} disabled={isLoading || isWaitingResponse}>
+            <Send className="h-5 w-5" />
+          </Button>
+        </div>
+        {selectedCommand && selectedCommand.name === '/generate_nft' && !isWaitingResponse && (
+          <MetadataInputs metadata={metadata} handleMetadataChange={handleMetadataChange} />
         )}
-      </div>
-        <Button onClick={handleSubmit} disabled={isLoading || isWaitingResponse}>
-          <Send className="h-5 w-5" />
-        </Button>
-      </div>
-    </footer>
+      </footer>
     </div>
   );
 };
