@@ -14,14 +14,6 @@ const galadriel = {
   rpcUrl: process.env.NEXT_PUBLIC_NETWORK === "local" ? 'http://127.0.0.1:8545' : 'https://devnet.galadriel.com/'
 }
 
-const polygonMainnet = {
-  chainId: 137,
-  name: 'Polygon',
-  currency: 'MATIC',
-  explorerUrl: 'https://polygonscan.com',
-  rpcUrl: 'https://polygon-rpc.com'
-}
-
 // 3. Create modal
 const metadata = {
   name: "OnboardAgent",
@@ -32,7 +24,7 @@ const metadata = {
 
 createWeb3Modal({
   ethersConfig: defaultConfig({ metadata }),
-  chains: [galadriel, polygonMainnet],
+  chains: [galadriel],
   projectId,
   enableAnalytics: true // Optional - defaults to your Cloud configuration
 })

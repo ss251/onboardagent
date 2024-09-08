@@ -1,8 +1,6 @@
 import { useAccount } from 'wagmi'
-import { useWeb3ModalAccount, useWeb3ModalProvider, useSwitchNetwork } from '@web3modal/ethers/react'
-import { polygon } from 'wagmi/chains'
+import { useSwitchNetwork } from '@web3modal/ethers/react'
 import { useLogin, useProfilesManaged, useSession, useLogout, ProfileId, ProfileSession } from '@lens-protocol/react-web'
-import { useEffect, useState } from 'react'
 import Image from 'next/image'
 
 export function LensAuth() {

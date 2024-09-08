@@ -1,7 +1,5 @@
 import { defaultWagmiConfig } from '@web3modal/wagmi/react/config'
 import { cookieStorage, createStorage, http } from 'wagmi'
-import { polygon } from 'wagmi/chains'
-// import { mainnet, sepolia } from 'wagmi/chains'
 
 // Custom Galadriel Devnet chain configuration
 export const galadrielDevnet = {
@@ -22,6 +20,7 @@ export const galadrielDevnet = {
   },
 }
 
+// Add necessary networks
 export const projectId = process.env.NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID
 
 if (!projectId) throw new Error('NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID is not defined')
@@ -29,17 +28,14 @@ if (!projectId) throw new Error('NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID is not de
 export const metadata = {
   name: 'Onboard Agent',
   description: 'AI Powered Web3 Onboarding Agent',
-  url: 'https:/onboardagent.vercel.app',
+  url: 'https://onboardagent.vercel.app',
   icons: []
 }
 
 // Create wagmiConfig
-const chains = [galadrielDevnet, polygon] as const
+export const chains = [galadrielDevnet] as const // Include all supported chains
 export const config = defaultWagmiConfig({
   chains,
-  transports: {
-    [polygon.id]: http(),
-  },
   projectId,
   metadata,
   ssr: true,
