@@ -172,6 +172,8 @@ export const AgentTest = () => {
   
     try {
       let intent = selectedCommand ? selectedCommand.name.slice(1) : determineIntent(query);
+
+      console.log(intent)
   
       switch (intent) {
         case 'cast_to_farcaster':
@@ -450,8 +452,8 @@ export const AgentTest = () => {
     });
   };
 
-  const waitForAgentRunToFinish = async (runId: number) => {
-    if (!isConnected || !onboardAgentContract || !query.trim()) {
+  const waitForAgentRunToFinish = async (runId: number, isWalletInfoIntent = false) => {
+    if (!isConnected || !onboardAgentContract) {
       return;
     }
     let isFinished = false;
@@ -474,27 +476,38 @@ export const AgentTest = () => {
     }
   
     console.log("Generated messages:", messages);
-    setAgentRun(prev => {
-      if (!prev) return undefined;
-      // Filter out the user message as it's already displayed
-      const newMessages = messages.filter(msg => msg.role !== 'user');
-      return {
-        ...prev,
-        messages: [...prev.messages, ...newMessages],
-      };
-    });
-  
-      if (messages.length > 0 && messages[messages.length - 1].role === 'assistant') {
-    const lastMessage = messages[messages.length - 1];
-    if (selectedCommand?.name.slice(1) === 'cast_to_farcaster' || determineIntent(query) === 'cast_to_farcaster') {
-      await prepareFarcasterContent(messages);
-    } else if (selectedCommand?.name.slice(1) === 'tweet_to_x' || determineIntent(query) === 'tweet_to_x') {
-      await prepareTwitterContent(messages);
-    } else if (selectedCommand?.name.slice(1) === 'view_wallet_info' || determineIntent(query) === 'view_wallet_info') {
-      // The wallet info is already processed, no additional action needed
-      console.log("Wallet info processed");
+    
+    if (isWalletInfoIntent) {
+      // For wallet info intent, only add the assistant's response
+      const assistantMessages = messages.filter(msg => msg.role === 'assistant');
+      setAgentRun(prev => {
+        if (!prev) return undefined;
+        return {
+          ...prev,
+          messages: [...prev.messages, ...assistantMessages],
+        };
+      });
+    } else {
+      // For other intents, add all messages except the user's initial query
+      setAgentRun(prev => {
+        if (!prev) return undefined;
+        const newMessages = messages.filter(msg => msg.role !== 'user');
+        return {
+          ...prev,
+          messages: [...prev.messages, ...newMessages],
+        };
+      });
     }
-  }
+  
+    if (messages.length > 0 && messages[messages.length - 1].role === 'assistant') {
+      const lastMessage = messages[messages.length - 1];
+      if (selectedCommand?.name.slice(1) === 'cast_to_farcaster' || determineIntent(query) === 'cast_to_farcaster') {
+        await prepareFarcasterContent(messages);
+      } else if (selectedCommand?.name.slice(1) === 'tweet_to_x' || determineIntent(query) === 'tweet_to_x') {
+        await prepareTwitterContent(messages);
+      }
+    }
+  
     setIsWaitingResponse(false);
   };
 
@@ -507,15 +520,30 @@ export const AgentTest = () => {
       let imageUrl = null;
   
       for (const message of messages) {
-        if (message.type === 'text' && message.role === 'assistant' && typeof message.content === 'string' && message.content.startsWith('Farcaster content:')) {
-          textContent = message.content.replace('Farcaster content:', '').trim();
+        if (message.type === 'text' && message.role === 'assistant' && typeof message.content === 'string') {
+          // Check for specific Farcaster content first
+          const farcasterMatch = message.content.match(/Farcaster content:\s*([\s\S]*)/i);
+          if (farcasterMatch) {
+            textContent = farcasterMatch[1].trim();
+            break;
+          } else {
+            // If no specific Farcaster content, append the message content
+            textContent += (textContent ? '\n' : '') + message.content.trim();
+          }
         } else if (message.type === 'image' && message.role === 'assistant') {
           imageUrl = message.content;
         }
       }
   
+      // Trim and limit the content to Farcaster's character limit (e.g., 320 characters)
+      textContent = textContent.trim().slice(0, 320);
+  
       console.log("Extracted text content:", textContent);
       console.log("Extracted image URL:", imageUrl);
+  
+      if (!textContent) {
+        throw new Error("No content extracted for Farcaster cast");
+      }
   
       const response = await fetch('/api/castToFarcaster', {
         method: 'POST',
@@ -537,9 +565,21 @@ export const AgentTest = () => {
             ],
           };
         });
+      } else {
+        throw new Error("Failed to generate Farcaster cast URL");
       }
     } catch (error) {
       console.error("Error preparing Farcaster content:", error);
+      setAgentRun(prev => {
+        if (!prev) return undefined;
+        return {
+          ...prev,
+          messages: [
+            ...prev.messages,
+            { role: 'assistant', content: 'Error preparing Farcaster content. Please try again.', type: 'text' }
+          ],
+        };
+      });
     } finally {
       setIsPreparingFarcaster(false);
       setIsWaitingResponse(false);
@@ -718,7 +758,7 @@ export const AgentTest = () => {
   
     const intent = "view_wallet_info";
     const systemPromptInfo = `You are an AI assistant specialized in analyzing wallet information. The user will provide wallet data in JSON format and a specific question about their wallet. Your task is to interpret this data and provide insights about the wallet's contents, balances, and transactions across different chains, focusing on answering the user's question. Here's how to interpret the data:
-
+  
     - address: The Ethereum address of the wallet
     - portfolios: An array of chain portfolios
       - chainId: The chain ID as defined by Covalent API
@@ -740,41 +780,24 @@ export const AgentTest = () => {
       setIsWaitingResponse(true);
       const intentBytes32 = ethers.encodeBytes32String(intent);
       const maxTokens = 5;
-
+  
       console.log('Calling runAgent with:', { intentBytes32, userPrompt, maxTokens });
       const tx = await onboardAgentContract.runAgent(intentBytes32, userPrompt, maxTokens);
       console.log('runAgent transaction:', tx);
-
-      // Wait for the transaction to be mined
+  
       const receipt = await tx.wait();
       console.log('Transaction receipt:', receipt);
-
-      // Extract the runId from the transaction receipt
+  
       const runId = getAgentRunId(receipt, onboardAgentContract);
       console.log('Extracted runId:', runId);
-
+  
       if (runId === null) {
         throw new Error('Failed to extract runId from transaction receipt');
       }
-
+  
       // Wait for the agent run to finish
-      await waitForAgentRunToFinish(runId);
-
-      // Fetch the final message history
-      const messages = await onboardAgentContract.getMessageHistory(runId);
-      console.log('Final message history:', messages);
-
-      const aiResponses = messages
-        .filter((msg: any) => msg.role === 'assistant')
-        .map((msg: any) => msg.content[0].value)
-        .filter((content: string) => content.trim() !== ''); // Filter out empty messages
-
-      if (aiResponses.length > 0) {
-        const aiResponse = aiResponses.join('\n');
-        addMessage('assistant', aiResponse);
-      } else {
-        addMessage('assistant', 'I apologize, but I couldn\'t generate a response. Please try asking your question again.');
-      }
+      await waitForAgentRunToFinish(runId, true); // Pass true to indicate this is a wallet info intent
+  
     } catch (error) {
       console.error("Error handling wallet info intent:", error);
       addMessage('assistant', 'Error analyzing wallet information. Please try again.');
