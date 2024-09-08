@@ -41,3 +41,24 @@ export interface Command {
   description: string;
   icon: ReactNode;
 }
+
+export interface TokenHolding {
+  address: string;
+  name: string;
+  symbol: string;
+  balance: string;
+  quote: string | null;
+}
+
+export interface ChainPortfolio {
+  chainId: number;
+  chainName: string;
+  nativeBalance: string;
+  tokenHoldings: TokenHolding[];
+}
+
+export interface WalletInfo {
+  address: string;
+  portfolios: ChainPortfolio[];
+  timestamp: string;
+}

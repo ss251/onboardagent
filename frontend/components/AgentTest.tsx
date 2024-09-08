@@ -10,7 +10,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { CommandMenu } from './CommandMenu';
-import { Message, AgentRun, Metadata, NetworkSelectionContent, Command } from '../types/agent';
+import { Message, AgentRun, Metadata, NetworkSelectionContent, Command, WalletInfo } from '../types/agent';
 import { ONBOARD_AGENT_CONTRACT_ADDRESS, DALLE_NFT_CONTRACT_ADDRESS } from '../constants/contracts';
 import { determineContentType, determineIntent, getAgentRunId, getMintInputId, generateWarpcastIntentUrl, generateTwitterIntentUrl, pollTokenUri } from '../utils/agentUtils';
 import { PulsatingOrb } from './PulsatingOrb';
@@ -23,6 +23,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { LensPostSummary } from './LensPostSummary';
 import { FarcasterLogo, LensLogo, WarpcastLogo, TwitterLogo } from './logos'
 import { ChainSelectionModal } from "./ChainSelectionModal";
+import { ethers } from "ethers";
 
 interface ContentItem {
   value: string;
@@ -67,6 +68,7 @@ export const AgentTest = () => {
   const [chains, setChains] = useState<ChainOption[]>([]);
   const [selectedChains, setSelectedChains] = useState<number[]>([]);
   const [isChainModalOpen, setIsChainModalOpen] = useState(false);
+  const [walletData, setWalletData] = useState<WalletInfo | null>(null);
 
   useEffect(() => {
     initializeContracts();
@@ -157,10 +159,6 @@ export const AgentTest = () => {
     if (!isConnected || !onboardAgentContract || !query.trim()) {
       return;
     }
-
-    if (!onboardAgentContract || !query.trim()) {
-      return;
-    }
   
     const userMessage: Message = { role: 'user', content: query, type: 'text' };
     setAgentRun(prev => ({
@@ -175,35 +173,47 @@ export const AgentTest = () => {
     try {
       let intent = selectedCommand ? selectedCommand.name.slice(1) : determineIntent(query);
   
-      if (intent === 'cast_to_farcaster') {
-        await handleFarcasterIntent(query);
-      } else if (intent === 'generate_nft') {
-        await handleGenerateNftIntent(query, metadata);
-      } else if (intent === 'post_to_lens') {
-        await handleLensIntent(query);
-      } else if (intent === 'tweet_to_x') {
-        await handleTwitterIntent(query);
-      } else {
-        const tx = await onboardAgentContract.handleIntent(intent, query);
-        console.log("Transaction sent:", tx.hash);
-        const receipt = await tx.wait();
-        console.log("Transaction receipt:", receipt);
-        const newRunId = getAgentRunId(receipt, onboardAgentContract);
-        console.log("New run ID:", newRunId);
-        if (newRunId !== null) {
-          await getAgentRun(newRunId);
-        } else {
-          throw new Error("Failed to get new run ID");
-        }
+      switch (intent) {
+        case 'cast_to_farcaster':
+          await handleFarcasterIntent(query);
+          break;
+        case 'generate_nft':
+          await handleGenerateNftIntent(query, metadata);
+          break;
+        case 'post_to_lens':
+          await handleLensIntent(query);
+          break;
+        case 'tweet_to_x':
+          await handleTwitterIntent(query);
+          break;
+        case 'view_wallet_info':
+          if (!walletData) {
+            setIsChainModalOpen(true);
+          } else {
+            await handleWalletInfoIntent(walletData, query);
+          }
+          break;
+        default:
+          const tx = await onboardAgentContract.handleIntent(intent, query);
+          console.log("Transaction sent:", tx.hash);
+          const receipt = await tx.wait();
+          console.log("Transaction receipt:", receipt);
+          const newRunId = getAgentRunId(receipt, onboardAgentContract);
+          console.log("New run ID:", newRunId);
+          if (newRunId !== null) {
+            await getAgentRun(newRunId);
+          } else {
+            throw new Error("Failed to get new run ID");
+          }
       }
     } catch (error) {
       console.error("Error running agent:", error);
       if (error instanceof Error) {
         console.error("Error details:", error.message);
       }
+    } finally {
       setIsWaitingResponse(false);
     }
-
   };
 
   const handleFarcasterIntent = async (query: string) => {
@@ -480,6 +490,9 @@ export const AgentTest = () => {
       await prepareFarcasterContent(messages);
     } else if (selectedCommand?.name.slice(1) === 'tweet_to_x' || determineIntent(query) === 'tweet_to_x') {
       await prepareTwitterContent(messages);
+    } else if (selectedCommand?.name.slice(1) === 'view_wallet_info' || determineIntent(query) === 'view_wallet_info') {
+      // The wallet info is already processed, no additional action needed
+      console.log("Wallet info processed");
     }
   }
     setIsWaitingResponse(false);
@@ -659,25 +672,18 @@ export const AgentTest = () => {
       console.error('No wallet address available');
       return;
     }
-
+  
     setIsLoading(true);
     setIsChainModalOpen(false);
-
-    console.log("Selected chains before API call:", chains);
-
-    // Filter out any empty strings and join the chainIds
+  
     const chainParams = chains.filter(Boolean).join(',');
-    
-    console.log("Chain parameters:", chainParams);
-
-    // Construct the URL with proper encoding
     const url = `/api/fetchWalletInfo?address=${encodeURIComponent(address)}&chains=${encodeURIComponent(chainParams)}`;
-    console.log("Fetching from URL:", url);
-
+  
     try {
       const response = await fetch(url);
       const data = await response.json();
       
+      // Display the wallet info in the chat
       setAgentRun(prev => ({
         id: prev?.id || 0,
         owner: prev?.owner || address || "",
@@ -691,24 +697,90 @@ export const AgentTest = () => {
         ],
         isFinished: true
       }));
+      
+      // Set the wallet data in state for later use
+      setWalletData(data);
+      
+      // Prompt the user to ask for insights
+      addMessage('assistant', 'I have fetched your wallet information. What insights would you like to know about your wallet?');
     } catch (error) {
       console.error('Error fetching wallet info:', error);
-      setAgentRun(prev => ({
-        id: prev?.id || 0,
-        owner: prev?.owner || address || "",
-        messages: [
-          ...(prev?.messages || []),
-          {
-            role: 'assistant',
-            content: 'Failed to fetch wallet information.',
-            type: 'text'
-          }
-        ],
-        isFinished: true
-      }));
+      addMessage('assistant', 'Failed to fetch wallet information. Please try again.');
     }
     setIsLoading(false);
-    setSelectedCommand(null);
+  };
+
+  const handleWalletInfoIntent = async (walletData: WalletInfo, userQuery: string) => {
+    if (!onboardAgentContract) {
+      console.error('Onboard Agent contract not initialized');
+      return;
+    }
+  
+    const intent = "view_wallet_info";
+    const systemPromptInfo = `You are an AI assistant specialized in analyzing wallet information. The user will provide wallet data in JSON format and a specific question about their wallet. Your task is to interpret this data and provide insights about the wallet's contents, balances, and transactions across different chains, focusing on answering the user's question. Here's how to interpret the data:
+
+    - address: The Ethereum address of the wallet
+    - portfolios: An array of chain portfolios
+      - chainId: The chain ID as defined by Covalent API
+      - chainName: The human-readable name of the chain
+      - nativeBalance: The balance of the native currency in its smallest unit (e.g., wei for ETH)
+      - tokenHoldings: An array of token holdings on this chain
+        - address: The contract address of the token
+        - name: The name of the token
+        - symbol: The symbol of the token (e.g., 'ETH', 'USDC')
+        - balance: The balance of the token in its smallest unit (e.g., wei for ETH, 6 decimal places for USDC)
+        - quote: The USD value of the token balance (null if unavailable)
+    - timestamp: When the data was fetched
+  
+    Provide a clear and concise answer to the user's question based on this data.`;
+  
+    const userPrompt = `${systemPromptInfo}\n\nWallet data:\n${JSON.stringify(walletData, null, 2)}\n\nUser's question: ${userQuery}`;
+  
+    try {
+      setIsWaitingResponse(true);
+      const intentBytes32 = ethers.encodeBytes32String(intent);
+      const maxTokens = 5;
+
+      console.log('Calling runAgent with:', { intentBytes32, userPrompt, maxTokens });
+      const tx = await onboardAgentContract.runAgent(intentBytes32, userPrompt, maxTokens);
+      console.log('runAgent transaction:', tx);
+
+      // Wait for the transaction to be mined
+      const receipt = await tx.wait();
+      console.log('Transaction receipt:', receipt);
+
+      // Extract the runId from the transaction receipt
+      const runId = getAgentRunId(receipt, onboardAgentContract);
+      console.log('Extracted runId:', runId);
+
+      if (runId === null) {
+        throw new Error('Failed to extract runId from transaction receipt');
+      }
+
+      // Wait for the agent run to finish
+      await waitForAgentRunToFinish(runId);
+
+      // Fetch the final message history
+      const messages = await onboardAgentContract.getMessageHistory(runId);
+      console.log('Final message history:', messages);
+
+      const aiResponses = messages
+        .filter((msg: any) => msg.role === 'assistant')
+        .map((msg: any) => msg.content[0].value)
+        .filter((content: string) => content.trim() !== ''); // Filter out empty messages
+
+      if (aiResponses.length > 0) {
+        const aiResponse = aiResponses.join('\n');
+        addMessage('assistant', aiResponse);
+      } else {
+        addMessage('assistant', 'I apologize, but I couldn\'t generate a response. Please try asking your question again.');
+      }
+    } catch (error) {
+      console.error("Error handling wallet info intent:", error);
+      addMessage('assistant', 'Error analyzing wallet information. Please try again.');
+    } finally {
+      setIsWaitingResponse(false);
+    }
   };
 
   return (
@@ -813,8 +885,11 @@ export const AgentTest = () => {
         onClose={() => setIsChainModalOpen(false)}
         chains={chains}
         selectedChains={selectedChains}
-        onChainSelect={handleChainSelection}
-        onSave={handleViewWalletInfo}
+        onChainSelect={setSelectedChains}
+        onSave={(selectedChains) => {
+          setSelectedChains(selectedChains);
+          handleViewWalletInfo(selectedChains);
+        }}
       />
     </div>
   );
